@@ -8,7 +8,7 @@
 
 /* Версия сборки — ТОЛЬКО номер, без описаний (по требованию).
    Видна в заголовке вкладки, в шапке страницы и в консоли. */
-const VERSION = "v3.1";
+const VERSION = "v3.2";
 document.title = `Солнечная система ${VERSION}`;
 console.log(`%c☀️ Солнечная система — сборка: ${VERSION}`, "color:#ffd75e;font-weight:bold");
 /* Бейдж версии в шапке страницы */
@@ -52,6 +52,7 @@ const state = {
   showMoons: true,
   showBelt: true,
   showComets: true,
+  zoom: 1,                       // масштаб вида (0.6× … 8×), колесо мыши / слайдер
   selected: null,
   hovered: null,
 };
@@ -1256,7 +1257,14 @@ function frame(now) {
 
   const timeSec = now / 1000;
   maybeSpawnAlien(dt, timeSec);          // случайные визиты инопланетян
-  drawBackground(timeSec);
+  drawBackground(timeSec);               // звёздный фон — вне масштаба (бесконечно далёк)
+  /* Трансформация масштаба вида: всё «мировое» содержимое рисуется с
+     scale(zoom) вокруг центра экрана. Клик/наведение пересчитываются
+     обратно через toWorld(). */
+  ctx.save();
+  ctx.translate(W / 2, H / 2);
+  ctx.scale(state.zoom, state.zoom);
+  ctx.translate(-W / 2, -H / 2);
   drawOrbits();                          // орбиты планет: эллипсы Кеплера или упрощённые круги
   drawCometOrbits();                     // эллиптические орбиты комет (пунктир)
   /* Дальний слой: тела «за» Солнцем — их перекроет диск Солнца */
@@ -1271,6 +1279,7 @@ function frame(now) {
   drawBelt(timeSec, "front");            // ближняя половина пояса
   drawComets(timeSec, "front");          // кометы перед Солнцем: ядро + кома + хвост
   if (alienPosNow && alienPosNow.y >= H / 2) drawAlien(timeSec); // НЛО перед Солнцем
+  ctx.restore();
 
   requestAnimationFrame(frame);
 }
@@ -1426,8 +1435,16 @@ document.getElementById("btnCloseInfo").addEventListener("click", hideInfo);
 /* ---------- Мышь: наведение, клик, tooltip ---------- */
 const tooltip = document.getElementById("tooltip");
 
+/* Преобразование экранных координат курсора в координаты «мира» с учётом
+   текущего масштаба вида (state.zoom). Центр масштабирования — экранная
+   середина; без этого клики и наведение «мимо» промахивались бы при zoom≠1. */
+function toWorld(mx, my) {
+  return { x: (mx - W / 2) / state.zoom + W / 2, y: (my - H / 2) / state.zoom + H / 2 };
+}
+
 canvas.addEventListener("mousemove", (e) => {
-  const hit = pickAny(e.clientX, e.clientY);
+  const wpt = toWorld(e.clientX, e.clientY);
+  const hit = pickAny(wpt.x, wpt.y);
   state.hovered = hit ? (hit.alien || hit.comet || hit.asteroid || hit.planet) : null;
   canvas.classList.toggle("hovering", !!hit);
   if (hit) {
@@ -1454,7 +1471,8 @@ canvas.addEventListener("mouseleave", () => {
 });
 
 canvas.addEventListener("click", (e) => {
-  const hit = pickAny(e.clientX, e.clientY);
+  const wpt = toWorld(e.clientX, e.clientY);
+  const hit = pickAny(wpt.x, wpt.y);
   if (hit && hit.alien) showAlienInfo(hit.alien);
   else if (hit && hit.comet) showInfo(null, null, null, hit.comet);
   else if (hit && hit.asteroid) showInfo(null, null, hit.asteroid);
@@ -1462,32 +1480,70 @@ canvas.addEventListener("click", (e) => {
   else hideInfo();
 });
 
+/* Колесо мыши над космосом — масштабирование вида (с зажатым Ctrl — скорость) */
+canvas.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  if (e.ctrlKey) {
+    // Ctrl+колесо: шаг скорости по логарифмической шкале (×1.25 за щелчок)
+    const l = Math.log10(state.speed) + (e.deltaY < 0 ? 0.1 : -0.1);
+    setSpeed(Math.pow(10, Math.min(3, Math.max(-1.301, l))));
+  } else {
+    setZoom(state.zoom * (e.deltaY < 0 ? 1.15 : 1 / 1.15));
+  }
+}, { passive: false });
+
 /* Тач-поддержка */
 canvas.addEventListener("touchstart", (e) => {
   const t = e.touches[0];
-  const hit = pickAny(t.clientX, t.clientY);
+  const wpt = toWorld(t.clientX, t.clientY);
+  const hit = pickAny(wpt.x, wpt.y);
   if (hit && hit.alien) { showAlienInfo(hit.alien); e.preventDefault(); }
   else if (hit && hit.comet) { showInfo(null, null, null, hit.comet); e.preventDefault(); }
   else if (hit && hit.asteroid) { showInfo(null, null, hit.asteroid); e.preventDefault(); }
   else if (hit) { showInfo(hit.planet, hit.moon); e.preventDefault(); }
 }, { passive: true });
 
-/* ---------- Управление: воспроизведение / пауза / скорость ---------- */
+/* ---------- Управление: воспроизведение / пауза / скорость / масштаб ---------- */
 const btnPlayPause = document.getElementById("btnPlayPause");
 const btnReset     = document.getElementById("btnReset");
 const speedSlider  = document.getElementById("speedSlider");
 const speedLabel   = document.getElementById("speedLabel");
-const presetBtns   = [...document.querySelectorAll(".speed-presets button")];
+const presetBtns   = [...document.querySelectorAll(".speed-presets button[data-speed]")];
+const zoomSlider   = document.getElementById("zoomSlider");
+const zoomLabel    = document.getElementById("zoomLabel");
+const zoomBtns     = [...document.querySelectorAll(".speed-presets button[data-zoom]")];
 
 function updatePlayButton() {
   btnPlayPause.textContent = state.playing ? "⏸ Пауза" : "▶ Играть";
 }
 
+/* Форматирование множителя скорости: «разы от реальной» — дробные значения
+   до 1× показываем с точностью до сотых, крупные — без дробей. */
+function fmtSpeed(v) {
+  if (v < 0.1) return v.toFixed(2).replace(/0+$/, "").replace(/\.$/, "") + "×";
+  if (v < 10)  return (+v.toFixed(2)) + "×";
+  return Math.round(v) + "×";
+}
+
+/* Скорость задаётся ЧИСЛОМ (разы от реальной). Ползунок — логарифмический:
+   его позиция t = log10(speed), диапазон 0.05× … 1000×. Так «иксы на
+   увеличение» распределены равномерно по десятичным порядкам. */
 function setSpeed(v) {
+  v = Math.min(1000, Math.max(0, v));
   state.speed = v;
-  speedSlider.value = v;
-  speedLabel.textContent = `${v}×`;
+  speedSlider.value = v > 0 ? Math.log10(v) : -1.301;
+  speedLabel.textContent = fmtSpeed(v);
   presetBtns.forEach(b => b.classList.toggle("active", parseFloat(b.dataset.speed) === v));
+}
+
+/* Масштаб вида: весь мир рисуется в ctx c трансформацией scale(zoom) вокруг
+   центра экрана; клики пересчитываются обратно через toWorld(). */
+function setZoom(z) {
+  z = Math.min(8, Math.max(0.6, z));
+  state.zoom = z;
+  zoomSlider.value = z;
+  zoomLabel.textContent = (z < 1 ? z.toFixed(1) : (+z.toFixed(2))) + "×";
+  zoomBtns.forEach(b => b.classList.toggle("active", parseFloat(b.dataset.zoom) === z));
 }
 
 btnPlayPause.addEventListener("click", () => {
@@ -1497,7 +1553,8 @@ btnPlayPause.addEventListener("click", () => {
 
 btnReset.addEventListener("click", () => {
   state.simDays = 0;
-  setSpeed(1);
+  setSpeed(0.05);   // стартовая скорость: 0.05× от реальной
+  setZoom(1);       // и возврат масштаба к обзору всей системы
   state.playing = true;
   updatePlayButton();
   hideInfo();
@@ -1522,8 +1579,10 @@ function toggleOrbitMode() {
 btnOrbitMode.addEventListener("click", toggleOrbitMode);
 updateOrbitModeButton();
 
-speedSlider.addEventListener("input", () => setSpeed(parseFloat(speedSlider.value)));
+speedSlider.addEventListener("input", () => setSpeed(Math.pow(10, parseFloat(speedSlider.value))));
 presetBtns.forEach(b => b.addEventListener("click", () => setSpeed(parseFloat(b.dataset.speed))));
+zoomSlider.addEventListener("input", () => setZoom(parseFloat(zoomSlider.value)));
+zoomBtns.forEach(b => b.addEventListener("click", () => setZoom(parseFloat(b.dataset.zoom))));
 
 /* Чекбоксы */
 document.getElementById("chkOrbits").addEventListener("change", (e) => state.showOrbits = e.target.checked);
@@ -1597,11 +1656,17 @@ window.addEventListener("keydown", (e) => {
       if (state.selected && state.selected.ship) hideInfo();
     }
   } else if (e.key === "+" || e.key === "=") {
-    setSpeed(Math.min(10, +(state.speed + 0.5).toFixed(1)));
+    // шаг по логарифмической шкале: ×1.25 за нажатие
+    setSpeed(Math.pow(10, Math.min(3, Math.log10(state.speed || 0.05) + 0.1)));
   } else if (e.key === "-") {
-    setSpeed(Math.max(0, +(state.speed - 0.5).toFixed(1)));
+    setSpeed(Math.pow(10, Math.max(-1.301, Math.log10(state.speed || 0.05) - 0.1)));
+  } else if (e.key === "[" ) {
+    setZoom(state.zoom / 1.2);
+  } else if (e.key === "]") {
+    setZoom(state.zoom * 1.2);
   }
 });
 
-setSpeed(1);
+setSpeed(0.05);   // старт: 0.05× от реальной скорости
+setZoom(1);
 updatePlayButton();

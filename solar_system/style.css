@@ -107,6 +107,12 @@ html, body {
 .speed-block label { font-size: 13px; color: #c6d2ea; }
 #speedLabel { font-weight: 700; color: #ffd76a; }
 
+/* Блок масштаба вида — оформление как у скорости, акцент бирюзовый */
+.zoom-block { display: flex; flex-direction: column; gap: 4px; }
+.zoom-block label { font-size: 13px; color: #c6d2ea; }
+#zoomLabel { font-weight: 700; color: #7ae0d8; }
+.zoom-block input[type="range"] { accent-color: #3fc9bd; }
+
 input[type="range"] {
   width: 180px;
   accent-color: #6a8dff;

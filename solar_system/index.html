@@ -15,7 +15,7 @@
     <!-- Верхняя панель -->
     <header class="topbar">
       <h1>☀️ Солнечная система <span id="versionBadge" class="version-badge" title="Версия сборки — если её нет или она старая, вы открыли не тот архив"></span></h1>
-      <p class="hint">Нажмите на планету, луну, астероид или комету, чтобы узнать о нём больше · Горячие клавиши: Пробел, O, C, M, B, +/−</p>
+      <p class="hint">Нажмите на планету, луну, астероид или комету, чтобы узнать о нём больше · Горячие клавиши: Пробел, O, C, M, B, U · Скорость и масштаб: колесо мыши / слайдеры</p>
     </header>
 
     <!-- Панель управления -->
@@ -26,14 +26,29 @@
       <button id="btnReset" class="ctrl-btn" title="Сбросить время и выбор">⟲ Сброс</button>
       <button id="btnOrbitMode" class="ctrl-btn" title="Переключить режим орбит (O)">◯ Упрощённые круги</button>
       <div class="speed-block">
-        <label for="speedSlider">Скорость:&nbsp;<span id="speedLabel">1×</span></label>
-        <input id="speedSlider" type="range" min="0" max="10" step="0.1" value="1" />
+        <!-- Скорость в РАЗАХ ОТ РЕАЛЬНОЙ, логарифмическая шкала 0.05× … 1000× -->
+        <label for="speedSlider">Скорость:&nbsp;<span id="speedLabel">0.05×</span></label>
+        <input id="speedSlider" type="range" min="-1.301" max="3" step="0.01" value="-1.301" title="От 0.05× до 1000× (логарифмическая шкала)" />
         <div class="speed-presets">
-          <button data-speed="0.5">0.5×</button>
+          <button data-speed="0.05">0.05×</button>
+          <button data-speed="0.1">0.1×</button>
           <button data-speed="1">1×</button>
-          <button data-speed="2">2×</button>
-          <button data-speed="5">5×</button>
           <button data-speed="10">10×</button>
+          <button data-speed="100">100×</button>
+          <button data-speed="1000">1000×</button>
+        </div>
+      </div>
+
+      <div class="zoom-block">
+        <!-- Масштаб вида: от обзора всей системы до крупного плана внутренней части -->
+        <label for="zoomSlider">Масштаб:&nbsp;<span id="zoomLabel">1×</span></label>
+        <input id="zoomSlider" type="range" min="0.6" max="8" step="0.05" value="1" title="Колесо мыши над космосом тоже масштабирует" />
+        <div class="speed-presets">
+          <button data-zoom="0.6">⊜ Обзор</button>
+          <button data-zoom="1">1×</button>
+          <button data-zoom="2">2×</button>
+          <button data-zoom="4">4×</button>
+          <button data-zoom="8">🔍 8×</button>
         </div>
       </div>
 
