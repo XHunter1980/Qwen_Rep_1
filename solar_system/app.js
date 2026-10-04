@@ -8,7 +8,7 @@
 
 /* Версия сборки — видна в заголовке страницы, в шапке и в консоли,
    чтобы по открытой страничке сразу было понятно, какая сборка запущена. */
-const VERSION = "v2.0 (Два режима орбит: эллипсы Кеплера + упрощённые круги; лог-шкала с подробным внутренним регионом; Солнце — фокус)";
+const VERSION = "v2.1 (Кометы замедлены до единой шкалы с планетами: 1 год = 20 сек при 1×; Галлея ≈ 25 мин, Энке ≈ 66 с)";
 document.title = `Солнечная система ${VERSION}`;
 console.log(`%c☀️ Солнечная система — сборка: ${VERSION}`, "color:#ffd75e;font-weight:bold");
 /* Бейдж версии в шапке страницы */
@@ -127,9 +127,13 @@ function keplerSolve(M, e) {
 }
 
 function cometPosition(c) {
-  const aPx = scaleAUtoPx(c.aAU);
+  const aPx = cometAPx(c);                       // экранная полуось (не за край экрана)
   const bPx = aPx * Math.sqrt(1 - c.ecc * c.ecc);
-  const M = circleAngle(state.simDays, c.periodDays, c.phase || 0);
+  /* Демонстрационная шкала: тот же темп, что у планет (1 год = 20 сек при 1×);
+     пропорции реальных периодов сохранены. */
+  const periodSec = c.periodYr * DEMO_COMET_YEAR_SECONDS;
+  const M = ((performance.now() / 1000) * state.speed / periodSec) * Math.PI * 2
+            + (c.phase || 0);
   const E = keplerSolve(((M + Math.PI) % (Math.PI * 2)) - Math.PI, c.ecc);
   // координаты в плоскости орбиты (фокус — Солнце — в центре экрана)
   const ox = Math.cos(E) * aPx - aPx * c.ecc;      // ось к перигелию
@@ -257,28 +261,42 @@ function drawSun(timeSec) {
 /* ---------- Кометы: данные, орбиты и отрисовка ----------
    Реальные параметры: a — большая полуось, ecc — эксцентриситет,
    период T = a^1.5 лет (III закон Кеплера), omegaDeg — долгота перигелия. */
+/* Демонстрационная шкала времени комет: 1 условный «год» кометы = 20 сек
+   (та же базовая шкала, что у планет: Земля 365 сут ≈ 20 сек при 1×).
+   Виток Галлея (75 лет) ≈ 25 минут, Энке (3.3 года) ≈ 66 секунд; ПРОПОРЦИИ
+   реальных периодов сохранены — Энке обгоняет Галлею ровно в 23 раза. */
+const DEMO_COMET_YEAR_SECONDS = EARTH_YEAR_SECONDS;
+
+/* Экранная большая полуось кометы: та же степенная шкала, что у планет,
+   но не дальше края экрана (у сильно вытянутых эллипсов дальняя точка
+   афелия может выходить за холст). */
+function cometAPx(c) {
+  const maxR = Math.min(W, H) * 0.5 - 14;
+  return Math.min(scaleAUtoPx(c.aAU), maxR);
+}
+
 const COMETS = [
   {
     name: "Комета Галлея", nameEn: "1P/Halley",
-    aAU: 17.83, ecc: 0.967, periodDays: 27_530, omegaDeg: 112, phase: 4.2,
+    aAU: 17.83, ecc: 0.967, periodYr: 75.3, perihelionAU: 0.59, aphelionAU: 35.1, omegaDeg: 112, phase: 4.2,
     color: "#bfe3ff", type: "Короткопериодическая комета (семья Юпитера)",
     desc: "Знаменитейшая комета: возвращается к Земле каждые ~76 лет, наблюдалась более 2000 лет (1059 г. н.э.). Ядро ~15 км, масса 2.2·10¹⁴ т. Последний визит — 1986 г., следующий — 2061 г.",
   },
   {
     name: "Комета Гейла-Боппа", nameEn: "C/1995 O1 Hale-Bopp",
-    aAU: 173, ecc: 0.995, periodDays: 27_300, omegaDeg: 282, phase: 5.5,
+    aAU: 173, ecc: 0.995, periodYr: 7470, perihelionAU: 0.87, aphelionAU: 345, omegaDeg: 282, phase: 5.5,
     color: "#d8f0ff", type: "Длиннопериодическая комета (облако Оорта)",
     desc: "Одна из самых наблюдаемых комет XX века (1997 г.): видна невооружённым глазом 18 месяцев, период ~7470 лет, ядро ~60–80 км.",
   },
   {
     name: "Комета Энке", nameEn: "2P/Encke",
-    aAU: 2.21, ecc: 0.848, periodDays: 1204, omegaDeg: 186, phase: 0.6,
+    aAU: 2.21, ecc: 0.848, periodYr: 3.3, perihelionAU: 0.34, aphelionAU: 4.08, omegaDeg: 186, phase: 0.6,
     color: "#cfe8ff", type: "Короткопериодическая комета (самая короткая из известных)",
     desc: "Период всего 3.3 года — рекорд среди комет. Источник метеорного потока Тауриды; орбита выдаётся далеко за Юпитер.",
   },
   {
     name: "Комета NEOWISE", nameEn: "C/2020 F3 (NEOWISE)",
-    aAU: 355, ecc: 0.998, periodDays: 49300, omegaDeg: 61, phase: 5.9,
+    aAU: 355, ecc: 0.998, periodYr: 6800, perihelionAU: 0.69, aphelionAU: 709, omegaDeg: 61, phase: 5.9,
     color: "#e6f4ff", type: "Длиннопериодическая комета",
     desc: "Яркая комета лета 2020 года — первая, видимая с Земли невооружённым глазом с 1997 года. Прошла 0.69 а.е. от Земли, период около 6800 лет.",
   },
@@ -291,7 +309,7 @@ function drawCometOrbits() {
   ctx.lineWidth = 1;
   ctx.setLineDash([4, 6]);
   for (const c of COMETS) {
-    const aPx = scaleAUtoPx(c.aAU);
+    const aPx = cometAPx(c);
     const w = (c.omegaDeg * Math.PI) / 180;
     ctx.save();
     ctx.translate(W / 2, H / 2);
@@ -954,7 +972,8 @@ function showInfo(p, moon = null, asteroid = null, comet = null) {
     infoName.textContent = `${c.name}  ·  ${c.nameEn}`;
     infoSize.textContent = "ядро ≈ 10–37 км (в масштабе не отображается)";
     infoDist.textContent = `перигелий ${c.perihelionAU} / афелий ${c.aphelionAU} а.е. (a = ${c.aAU} а.е.)`;
-    infoPeriod.textContent = `${formatPeriod(c.periodDays)} · e=${c.ecc} — сильно вытянутая орбита`;
+    const yr = c.periodYr >= 100 ? Math.round(c.periodYr).toLocaleString("ru-RU") : c.periodYr;
+    infoPeriod.textContent = `${yr} лет · e=${c.ecc} — сильно вытянутая орбита`;
     infoMoons.textContent = "—";
     infoType.textContent = c.type;
     infoDesc.textContent = c.desc;
@@ -1124,13 +1143,15 @@ document.getElementById("chkComets").addEventListener("change", (e) => {
 /* Сноска: описание текущей демонстрации */
 const footnote = document.getElementById("footnote");
 footnote.innerHTML =
-  "Демонстрация v2.0: два режима орбит — реальные ЭЛЛИПСЫ Кеплера (Солнце в фокусе каждой орбиты, " +
+  "Демонстрация v2.1: два режима орбит — реальные ЭЛЛИПСЫ Кеплера (Солнце в фокусе каждой орбиты, " +
   "без преувеличения эксцентриситетов) и упрощённые КРУГИ (кнопка «◯ Упрощённые круги» / клавиша O). " +
   "Расстояния — степенная (сжатая к логарифмической) шкала r ∝ a^0.52: внутренняя система видна подробно, " +
   "порядок и непересечение орбит сохранены. Периоды пропорциональны настоящим (Земля = 365 сут ≈ 20 сек при 1×). " +
   "Пояс астероидов (2.2–3.4 а.е.) лежит строго между Марсом и Юпитером. " +
   "Кометы (Галлея, Хейл-Боппа, Энке, NEOWISE) — на реальных вытянутых эллипсах Кеплера с Солнцем в фокусе; " +
-  "хвост всегда направлен от Солнца. Размеры тел условны; масштаб лунных орбит увеличен.";
+  "хвост всегда направлен от Солнца. Скорость комет — единая наглядная шкала с планетами (1 год = 20 сек при 1×): " +
+  "виток Галлея ≈ 25 мин, Энке ≈ 66 сек; пропорции реальных периодов сохранены. " +
+  "Размеры тел условны; масштаб лунных орбит увеличен.";
 
 /* Горячие клавиши */
 window.addEventListener("keydown", (e) => {
