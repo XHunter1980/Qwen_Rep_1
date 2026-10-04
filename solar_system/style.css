@@ -101,9 +101,6 @@ html, body {
   box-shadow: 0 0 14px rgba(110, 170, 255, 0.45);
 }
 
-.galaxy-block { align-items: center; }
-#swirlLabel { font-weight: 700; color: #8fe0ff; }
-.galaxy-block input[type="range"] { width: 120px; accent-color: #6ad0ff; }
 .hidden { display: none !important; }
 
 .speed-block { display: flex; flex-direction: column; gap: 4px; }

@@ -8,7 +8,7 @@
 
 /* Версия сборки — видна в заголовке страницы, в шапке и в консоли,
    чтобы по открытой страничке сразу было понятно, какая сборка запущена. */
-const VERSION = "v1.6 (Реальные эллипсы без преувеличения + пояс строго между Марсом и Юпитером)";
+const VERSION = "v1.7 (Круговые орбиты с пропорц. расстоянием вместо Галактики + кометы)";
 document.title = `Солнечная система ${VERSION}`;
 console.log(`%c☀️ Солнечная система — сборка: ${VERSION}`, "color:#ffd75e;font-weight:bold");
 /* Бейдж версии в шапке страницы */
@@ -140,723 +140,56 @@ const PLANETS = [
 ];
 
 /* =========================================================
-   АСТЕРОИДНЫЙ ПОЯС (опциональный слой, клавиша B)
-   mainAU    — большая полуось орбиты, а.е.
-   periodDays — сидерический период обращения, земных суток
-   ecc       — эксцентриситет орбиты (реальные значения)
-   diameterKm — средний диаметр, км
-   drawR     — радиус на экране, px (условно увеличен для наглядности)
-   ==========*/
-const BELT_ASTEROIDS = [
-  { name: "Церера", nameEn: "1 Ceres",
-    mainAU: 2.77, periodDays: 1680, ecc: 0.076, inclination: 10.6,
-    diameterKm: 946, drawR: 5, color: "#cfc4b4", type: "Карликовая планета",
-    desc: "Крупнейший объект главного пояса и единственная карликовая планета внутри орбиты Нептуна. Содержит ≈1/3 массы всего пояса; открыта в 1801 г., Пиацци." },
-  { name: "Веста", nameEn: "4 Vesta",
-    mainAU: 2.36, periodDays: 1321, ecc: 0.089, inclination: 7.1,
-    diameterKm: 525, drawR: 4, color: "#d8d2c8", type: "Протопланета (астероид)",
-    desc: "Второй по массе астероид пояса, дифференцированное тело с металлическим ядром. Считается источником метеоритов HED; его изучал зонд Dawn." },
-  { name: "Паллада", nameEn: "2 Pallas",
-    mainAU: 2.77, periodDays: 1686, ecc: 0.231, inclination: 34.8,
-    diameterKm: 512, drawR: 4, color: "#a9b0bd", type: "Астероид",
-    desc: "Третий по размеру астероид с сильно наклонённой (34.8°) и вытянутой орбитой. Обнаружен в 1802 г., Ольберсом." },
-  { name: "Гигия", nameEn: "10 Hygiea",
-    mainAU: 3.14, periodDays: 2113, ecc: 0.115, inclination: 3.8,
-    diameterKm: 434, drawR: 3.5, color: "#bfb6a6", type: "Астероид",
-    desc: "Четвёртый по размеру, почти сферическое тёмное тело внешней части пояса; открыт в 1849 г., де Гаспарисом." },
-];
-
-/* Пояс «по Кеплеру»: эллипс с Солнцем в фокусе + уравнение Кеплера
-   M = E − e·sin(E) (решение итерациями Ньютона).
-   aPx/bPx — полуоси в пикселях экрана, phase — начальная долгота перигелия. */
-function keplerAnomaly(Mdeg, ecc) {
-  const M = (Mdeg * Math.PI) / 180;
-  let E = M;
-  for (let i = 0; i < 6; i++) E -= (E - ecc * Math.sin(E) - M) / (1 - ecc * Math.cos(E));
-  return E;
-}
-
-/* Точка на кеплеровской орбите (эллипс, фокус — в центре координат) */
-function keplerPoint(aPx, bPx, ecc, E) {
-  return { x: aPx * (Math.cos(E) - ecc), y: bPx * Math.sin(E) };
-}
-
-/* Наклон плоскости орбит к линии наблюдателя. Объявлено здесь (до makeStars
-   и resize), т.к. const в TDZ недоступен до своей строки.
-   v1.6: преувеличение вытянутости (ECC_EXAG) убрано — все тела движутся по
-   эллипсам Кеплера с РЕАЛЬНЫМИ эксцентриситетами, как в настоящем небе. */
-const TILT = 0.62;         // наклон плоскости эклиптики к линии наблюдателя
-
-/* ---------- Состояние симуляции ---------- */
-const EARTH_YEAR_SECONDS = 20;     // 1 земной год = 20 сек при скорости 1×
-
-/* Режим «Галактика»: Солнце движется по ЭЛЛИПТИЧЕСКОЙ галактической орбите,
-   где центр Галактики — ФОКУС эллипса (по аналогии с Солнцем в фокусе планетных
-   орбит), а сама Солнечная система — в перигалактионе. Движение по законам Кеплера:
-   быстрее у центра Галактики, медленнее в апогалактике. Планеты рисуют спираль
-   (циклоиду) вокруг движущегося Солнца.
-   GALAXY_A_KM  — большая полуось галактической орбиты Солнца, кпк (реально ≈7.9)
-   GALAXY_ECC   — эксцентриситет (модельный 0.2; реальный ≈0.05, увеличен для наглядности)
-   GALAXY_ORBIT_DAYS: модельные сутки на один виток Солнца вокруг центра Галактики.
-   Вихрь 1× подобран так, чтобы за один виток Солнца Земля успевала сделать ~4 оборота
-   (реально ≈ 230 млн лет / 365 сут, для наглядности масштаб сжат). */
-const GALAXY_A_KM = 7.9;                                   // большая полуось, кпк
-const GALAXY_ECC = 0.2;                                    // эксцентриситет орбиты Солнца
-/* Модельный «галактический год»: один оборот Солнца вокруг центра Галактики
-   = 30 земных лет (реально ~230 млн лет — для демонстрации сжато). Раньше виток
-   Солнца длился всего 4 земных года, из-за чего спирали внутренних планет
-   (Венера/Земля) за один галактический цикл улетали дальше Юпитера и Сатурна.
-   При 30 годах внешние планеты делают десятки витков и остаются визуально дальше. */
-const GALAXY_ORBIT_DAYS = 365.25 * 30;
-const GAL_TRIALS_MAX = 900;        // точек в хвосте спирали
-const GAL_TRIAL_STRIDE = 2;        // шаг записи точки траектории (в модельных сутках)
-
-const state = {
-  playing: true,
-  speed: 1,
-  simDays: 0,          // модельные сутки
-  selected: null,       // выбранная планета
-  hovered: null,
-  showOrbits: true,
-  showLabels: true,
-  realScale: false,
-  galaxyMode: false,    // режим движения по Галактике
-  swirl: 1,             // множитель скорости вихря
-  showTrails: true,     // рисовать спиральные траектории
-  showMoons: true,      // опциональный слой: крупнейшие луны планет
-  showBelt: true,       // опциональный слой: астероидный пояс + крупные астероиды
-};
-
-/* ---------- Звёздный фон + галактика + астероидный пояс ---------- */
-let stars = [];
-let bgStars = [];   // дальние звёзды Галактики (в координатах галакт. центра)
-let dustLanes = []; // пылевые рукава спиральной галактики
-let beltRocks = makeBeltRocks(); // фоновые астероиды главного пояса (точки, движутся по Кеплеру)
-
-/* Генератор фоновых астероидов главного пояса (кластер между Марсом и Юпитером):
-   ~500 точек с малым разбросом полуоси/эксцентриситета, каждая со своей
-   начальной средней аномалией M0 — пояс выглядит «живым» и вращается по Кеплеру.
-   ВАЖНО: перигелий каждого камня не ближе 1.72 а.е. (за афелием Марса 1.666),
-   афелий не дальше 4.90 а.е. (перед перигелием Юпитера 4.951) — даже при
-   РЕАЛЬНЫХ эксцентриситетах ни одна точка пояса не пересекает орбиты планет. */
-function makeBeltRocks() {
-  const rocks = [];
-  for (let i = 0; i < 520; i++) {
-    const u = Math.random();
-    const aAU = 2.22 + u * (3.38 - 2.22) * (0.35 + 0.65 * Math.sqrt(Math.random()));
-    // ecc не допускаем залёта за границы «коридора» 1.72–4.90 а.е.:
-    const maxEcc = Math.min(0.16, (aAU - 1.72) / aAU, (4.90 - aAU) / aAU);
-    rocks.push({
-      aAU,
-      ecc: Math.max(0, Math.random() * maxEcc),
-      periodDays: 365.25 * Math.pow(aAU, 1.5),      // III закон Кеплера
-      M0: Math.random() * 360,                        // средняя аномалия при t = 0 (°)
-      omegaDeg: Math.random() * 360,                  // долгота перигелия
-      tilt: (Math.random() - 0.5) * 0.22,             // малый наклон отдельной орбиты
-      r: 0.5 + Math.random() * 1.1,                   // размер точки, px
-      alpha: 0.35 + Math.random() * 0.45,
-      gray: 140 + Math.floor(Math.random() * 90),     // оттенок серо-коричневого
-    });
-  }
-  return rocks;
-}
-
-function makeStars(w, h) {
-  stars = [];
-  const count = Math.floor((w * h) / 2600);
-  for (let i = 0; i < count; i++) {
-    stars.push({
-      x: Math.random() * w,
-      y: Math.random() * h,
-      r: Math.random() * 1.3 + 0.2,
-      a: Math.random() * 0.7 + 0.25,
-      tw: Math.random() * Math.PI * 2,        // фаза мерцания
-      twSpeed: 0.4 + Math.random() * 1.6,
-    });
-  }
-
-  /* Дальние звёзды для режима «Галактика»: распределены по лог-радиусу
-     вокруг галактического центра (0,0 в «галактических» координатах). */
-  bgStars = [];
-  const viewR = Math.hypot(w, h);
-  const nBg = Math.floor((w * h) / 1400);
-  for (let i = 0; i < nBg; i++) {
-    const ang = Math.random() * Math.PI * 2;
-    const rr = viewR * Math.pow(Math.random(), 0.6);
-    bgStars.push({
-      x: Math.cos(ang) * rr,
-      y: Math.sin(ang) * rr * TILT,           // наклон плоскости Галактики
-      r: Math.random() * 1.2 + 0.2,
-      a: Math.random() * 0.6 + 0.15,
-      tw: Math.random() * Math.PI * 2,
-      twSpeed: 0.3 + Math.random() * 1.4,
-    });
-  }
-
-  /* Пылевые рукава: логарифмические спирали из «облаков» */
-  dustLanes = [];
-  const arms = 4;
-  for (let a = 0; a < arms; a++) {
-    const arm = [];
-    const phase = (a / arms) * Math.PI * 2;
-    for (let i = 0; i < 90; i++) {
-      const t = i / 89;
-      const rr = 120 + t * viewR * 1.6;
-      const th = phase + t * 3.2;             // закрученность рукава
-      arm.push({
-        x: Math.cos(th) * rr,
-        y: Math.sin(th) * rr * 0.62,
-        r: 26 + Math.random() * 60,
-        alpha: 0.05 + 0.05 * (1 - t),
-        hue: 225 + Math.random() * 50,
-      });
-    }
-    dustLanes.push(arm);
-  }
-
-}
-
-/* ---------- Компонновка / размеры ---------- */
-let W = 0, H = 0, DPR = 1;
-
-/* Галактическая орбита Солнца — эллипс с центром Галактики в ФОКУСЕ.
-   galApx/galBpx — большая/малая полуоси на экране (в «галактических» единицах),
-   центр эллипса смещён от фокуса на c = A·e. В перигалактионе Солнце ближе
-   к центру Галактики (расстояние A(1−e)), в апогалактике — дальше (A(1+e)).
-   Zoom подбирается так, чтобы весь эллипс + спираль Нептуна помещались на экране. */
-let galApx = 260;
-let galBpx = 250;
-let GALAXY_ZOOM = 0.5;
-function updateGalaxyScale() {
-  const base = Math.min(W, H) || 800;
-  galApx = base * 0.30;
-  galBpx = galApx * Math.sqrt(1 - GALAXY_ECC * GALAXY_ECC);
-  const nep = PLANETS[PLANETS.length - 1];                 // Нептун
-  const aR = orbitRadiusGalaxy(nep);
-  const e = nep.ecc || 0;
-  const aphelionR = aR * (1 + e);                          // крайний виток спирали Нептуна
-  // самая удалённая точка от центра Галактики = апогалактион + афелиева спираль
-  GALAXY_ZOOM = (base * 0.47) / (galApx * (1 + GALAXY_ECC) + aphelionR);
-}
-
-function resize() {
-  DPR = window.devicePixelRatio || 1;
-  W = window.innerWidth;
-  H = window.innerHeight;
-  canvas.width = W * DPR;
-  canvas.height = H * DPR;
-  canvas.style.width = W + "px";
-  canvas.style.height = H + "px";
-  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  makeStars(W, H);
-  updateGalaxyScale();
-}
-
-/* ---------- Орбитальные радиусы на экране ----------
-   Реальные расстояния сжаты степенной шкалой a^0.52: она заметно «раскрывает»
-   внутренние орбиты (у чистой лог-шкалы Марс 1.52 а.е. и пояс 2–3.6 а.е. сливались,
-   и казалось, что Марс лежит внутри пояса), но сохраняет правильный ПОРЯДОК и
-   соразмерность всех дистанций: Меркурий < Венера < Земля < Марс < ПОЯС < Юпитер <
-   Сатурн < Уран < Нептун. Одна и та же шкала — для планет и астероидов.
-   ВАЖНО: const-ы объявлены ДО вызова resize() ниже — иначе TDZ («Cannot access
-   'AU_MIN' before initialization») ломал всю страницу при загрузке. */
-const AU_MIN = 0.30;      // нижняя граница шкалы (перигелий Меркурия)
-const AU_MAX = 30.05;     // верхняя граница (Нептун)
-const AU_POW = 0.52;      // показатель степени сжатия
-/* Коэффициент сжатия спиралей в режиме «Галактика» (объявлен до resize():
-   updateGalaxyScale вызывает orbitRadiusGalaxy, использующий эту константу). */
-const GAL_SPIRAL_K = 0.37;
-function scaleAUtoPx(aAU) {
-  const maxR = Math.min(W, H) * 0.46;
-  const minR = Math.min(W, H) * 0.085;
-  const t = (Math.pow(Math.max(aAU, AU_MIN), AU_POW) - Math.pow(AU_MIN, AU_POW)) /
-            (Math.pow(AU_MAX, AU_POW) - Math.pow(AU_MIN, AU_POW));
-  return minR + t * (maxR - minR);
-}
-
-window.addEventListener("resize", resize);
-resize();
-
-function orbitRadius(planet) {
-  return scaleAUtoPx(planet.orbitAU);                    // одна шкала с астероидами
-}
-
-function orbitRadiusGalaxy(planet) {
-  return scaleAUtoPx(planet.orbitAU) * GAL_SPIRAL_K;     // та же шкала, сжатая для спиралей
-}
-
-function planetScreenRadius(planet) {
-  if (!state.realScale) return planet.drawR;
-  // режим реальных относительных размеров (с ограничителем)
-  const earthPx = Math.min(W, H) * 0.012; // "Земля" в пикселях
-  return Math.max(1.5, planet.realRel * earthPx);
-}
-
-/* ---------- Позиции планет (классический режим: эллипс с Солнцем в ФОКУСЕ) ----------
-   Планеты движутся по законам Кеплера: уравнение M = E − e·sin(E) решается
-   каждый кадр (Ньютон, 6 итераций — быстрее света для глаза). Солнце стоит
-   точно в фокусе эллипса, поэтому у перигелия планета летит заметно быстрее,
-   чем у афелия (II закон Кеплера — равенство площадей).
-   v1.6: используется РЕАЛЬНЫЙ эксцентриситет без визуального преувеличения —
-   орбиты такие же, как в настоящем небе (у большинства планет почти круговые;
-   самый вытянутый эллипс — у Меркурия, e = 0.206).
-   ecc       — реальный эксцентриситет орбиты
-   periAU    — расстояние в перигелии, а.е.
-   aphelionAU— расстояние в афелии, а.е.
-   omegaDeg  — долгота перигелия (ориентация эллипса на экране) */
-
-function planetPosition(planet) {
-  if (state.galaxyMode) {
-    /* Спираль: положение Солнца в галактике + орбитальный цикл вокруг него */
-    const w = planetAtTime(planet, state.simDays, scene);
-    return toScreen(w.x, w.y, scene);
-  }
-  const aPx = orbitRadius(planet);                       // большая полуось на экране
-  const e = planet.ecc || 0;                             // реальный ecc, без ×3
-  const bPx = aPx * Math.sqrt(1 - e * e);                // малая полуось
-  const Mdeg = (state.simDays / planet.periodDays) * 360 + planet.phase * (180 / Math.PI);
-  const E = keplerAnomaly(Mdeg, e);
-  const k = keplerPoint(aPx, bPx, e, E);                 // точка вокруг ФОКУСА (Солнца)
-  const rot = (planet.omegaDeg * Math.PI) / 180;         // ориентация эллипса
-  const rx = k.x * Math.cos(rot) - k.y * Math.sin(rot);
-  const ry = (k.x * Math.sin(rot) + k.y * Math.cos(rot)) * TILT;
-  return { x: W / 2 + rx, y: H / 2 + ry, angle: E, r: aPx };
-}
-
-/* Стартовые фазы планет/лун/астероидов — разбросаны по орбитам (золотой угол) */
-PLANETS.forEach((p, i) => {
-  p.phase = (i * 2.399963) % (Math.PI * 2);              // средняя аномалия при t=0 (рад)
-  p.omegaDeg = (i * 47) % 360;                           // долгота перигелия (°)
-  if (!p.majorMoons) return;
-  p.majorMoons.forEach((m, j) => { m.phase = ((j + 1) * 2.399963 + p.phase) % (Math.PI * 2); });
-});
-BELT_ASTEROIDS.forEach((a, i) => {
-  a.M0 = (i * 137.5) % 360;                              // начальная средняя аномалия (°)
-  a.omegaDeg = (i * 83) % 360;                           // долгота перигелия (°)
-});
-
-/* =========================================================
-   РЕЖИМ «ГАЛАКТИКА»: Солнечная система обращается вокруг
-   центра Галактики по ЭЛЛИПСУ, в ФОКУСЕ которого — центр
-   Галактики (аналогично планетам вокруг Солнца). Движение по
-   Кеплеру: в перигалактионе быстрее, в апогалактике медленнее.
-   Планеты при этом рисуют спираль (циклоиду) вокруг Солнца.
-   ========================================================= */
-
-/* Положение Солнца на галактическом эллипсе. Аргумент — «галактические сутки»
-   (simDays * swirl): функция НЕ умножает время повторно, иначе при вихре ≠ 1×
-   спираль планеты и её текущая позиция разошлись бы. Возвращает координаты
-   относительно ФОКУСА (центра Галактики). */
-function sunAtTime(gDays) {
-  const Mdeg = (gDays / GALAXY_ORBIT_DAYS) * 360;          // средняя аномалия
-  const E = keplerAnomaly(Mdeg, GALAXY_ECC);               // эксцентрическая
-  const k = keplerPoint(galApx, galBpx, GALAXY_ECC, E);    // вокруг фокуса
-  /* Перигалактион зафиксирован по направлению +X (там же, где система стартует):
-     иначе «всплывающий» угол истинной аномалии с учётом наклонения TILT давал
-     рассогласование спирали и текущего положения планет при вихре ≠ 1×. */
-  return { x: k.x, y: k.y * TILT, trueAnom: 0, rNorm: Math.hypot(k.x, k.y) / galApx };
-}
-
-/* Параметры «сцены» для текущего кадра (пересчитываются каждый кадр) */
-let scene = null;
-function computeScene() {
-  if (!state.galaxyMode) {
-    scene = { cx: W / 2, cy: H / 2, scale: 1, camX: 0, camY: 0, sunAngle: 0, galaxyDays: 0, sunDist: 0 };
-    return scene;
-  }
-  const galaxyDays = state.simDays * state.swirl;          // «галактическое время»
-  const sunPos = sunAtTime(galaxyDays);                    // Солнце относительно центра Галактики (с учётом вихря)
-  const zoom = GALAXY_ZOOM;                                // адаптивный масштаб камеры
-  scene = {
-    cx: W / 2 - sunPos.x * zoom,                           // экранное положение Солнца
-    cy: H / 2 - sunPos.y * zoom,
-    scale: zoom,
-    camX: sunPos.x, camY: sunPos.y,
-    sunAngle: sunPos.trueAnom,                             // истинная аномалия (направление от центра)
-    galaxyDays,
-    sunDist: sunPos.rNorm * GALAXY_A_KM,                   // Солнце→центр Галактики, кпк (HUD)
-  };
-  return scene;
-}
-
-/* Орбитальный радиус в режиме Галактики: та же степенная шкала a^0.52, что и в
-   классике (scaleAUtoPx), но умноженная на GAL_SPIRAL_K — спирали сжаты вокруг
-   движущегося Солнца, чтобы вместе с галактическим эллипсом помещаться на экране.
-   Монотонность по a.e. сохраняется автоматически: Меркурий < ... < ПОЯС < ... < Нептун. */
-
-/* Аналитическая позиция планеты в момент tDays (спираль/циклоида):
-   положение Солнца на галактическом эллипсе в тот же момент + орбитальный цикл
-   вокруг него. ВРЕМЯ СОЛНЦА ПЕРЕДАЁТСЯ В «ГАЛАКТИЧЕСКИХ» СУТКАХ (tDays * swirl):
-   раньше из-за несогласованности множителя спирали внутренних планет (Венера,
-   Земля) растягивались сильнее внешних и казалось, что они дальше Юпитера.
-   Форма витка — ОКРУЖНОСТЬ с радиусом средней дистанции: вытянутые эллипсы
-   внутренних планет в режиме Галактики визуально пересекали бы астероидный
-   пояс, чего в реальности не происходит (афелий Земли 1.017 а.е. < перигелий
-   пояса ~2.1 а.е.). Спиральность траекторий это полностью сохраняет. */
-function planetAtTime(planet, tDays) {
-  const sol = sunAtTime(tDays * state.swirl);              // Солнце в тот же момент галактического времени
-  /* Кеплеровский виток вокруг Солнца с РЕАЛЬНЫМ эксцентриситетом (без ×3
-     преувеличения как в классике): расстояние планеты до Солнца колеблется
-     строго между её перигелием и афелием — порядок дистанций сохраняется. */
-  const aR = orbitRadiusGalaxy(planet);                    // средняя дистанция на экране
-  const e = planet.ecc || 0;                               // реальный ecc ≤ 0.206 (Меркурий)
-  const bR = aR * Math.sqrt(1 - e * e);
-  const Mdeg = (tDays / planet.periodDays) * 360 + (planet.phase * 180) / Math.PI;
-  const E = keplerAnomaly(Mdeg, e);
-  const k = keplerPoint(aR, bR, e, E);                     // точка вокруг фокуса (Солнца)
-  const rot = (planet.omegaDeg * Math.PI) / 180;           // ориентация эллипса витка
-  const rx = k.x * Math.cos(rot) - k.y * Math.sin(rot);
-  const ry = (k.x * Math.sin(rot) + k.y * Math.cos(rot)) * TILT;
-  return {
-    x: sol.x + rx,
-    y: sol.y + ry,
-  };
-}
-
-function toScreen(px, py, sc) {
-  return { x: sc.cx + px * sc.scale, y: sc.cy + py * sc.scale };
-}
-
-/* ---------- Позиции лун (опциональный слой) ----------
-   Луна обращается вокруг планеты: угол = 2π * simDays / periodDays.
-   Отрицательный период (Тритон) — ретроградное обращение. */
-const MOON_ZOOM = 1.5; // визуальное усиление масштаба спутниковой системы
-
-function moonPosition(planet, moon, pos, R) {
-  const scale = planetScreenRadius(planet) / planet.drawR; // множитель реальных размеров
-  const ang = (state.simDays / moon.periodDays) * Math.PI * 2 + moon.phase;
-  const orbR = Math.max(R + 4, moon.drawOrbR * scale * MOON_ZOOM);
-  return {
-    x: pos.x + Math.cos(ang) * orbR,
-    y: pos.y + Math.sin(ang) * orbR * TILT, // тот же наклон плоскости, что и у орбит
-    r: Math.max(1.3, moon.relR * R),
-    orbR,
-  };
-}
-
-/* ---------- Отрисовка ---------- */
-function drawBackground(timeSec) {
-  ctx.fillStyle = "#05060f";
-  ctx.fillRect(0, 0, W, H);
-
-  if (state.galaxyMode) {
-    drawGalaxyBackdrop(timeSec);
-    return;
-  }
-
-  for (const s of stars) {
-    const alpha = s.a * (0.7 + 0.3 * Math.sin(s.tw + timeSec * s.twSpeed));
-    ctx.globalAlpha = alpha;
-    ctx.fillStyle = "#ffffff";
-    ctx.beginPath();
-    ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  ctx.globalAlpha = 1;
-}
-
-/* Фон галактики: ядро, спиральные рукава, дальние звёзды.
-   Всё привязано к галактическому центру и движется вместе с камерой. */
-function drawGalaxyBackdrop(timeSec) {
-  const sc = scene;
-  // галактический центр на экране
-  const gc = toScreen(0, 0, sc);
-  const viewR = Math.hypot(W, H);
-
-  // спиральные пылевые рукава (мягкие облака)
-  for (const arm of dustLanes) {
-    for (const c of arm) {
-      const p = toScreen(c.x, c.y, sc);
-      if (p.x < -100 || p.x > W + 100 || p.y < -100 || p.y > H + 100) continue;
-      const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, c.r);
-      g.addColorStop(0, `hsla(${c.hue}, 60%, 60%, ${c.alpha})`);
-      g.addColorStop(1, "hsla(230, 60%, 50%, 0)");
-      ctx.fillStyle = g;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, c.r, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-
-  // ядро Галактики
-  const coreR = viewR * 0.16;
-  let g = ctx.createRadialGradient(gc.x, gc.y, 0, gc.x, gc.y, coreR);
-  g.addColorStop(0, "rgba(255, 236, 190, 0.55)");
-  g.addColorStop(0.35, "rgba(255, 200, 130, 0.22)");
-  g.addColorStop(1, "rgba(255, 180, 110, 0)");
-  ctx.fillStyle = g;
-  ctx.beginPath();
-  ctx.arc(gc.x, gc.y, coreR, 0, Math.PI * 2);
-  ctx.fill();
-
-  // дальние звёзды
-  ctx.fillStyle = "#ffffff";
-  for (const s of bgStars) {
-    const p = toScreen(s.x, s.y, sc);
-    if (p.x < 0 || p.x > W || p.y < 0 || p.y > H) continue;
-    const alpha = s.a * (0.7 + 0.3 * Math.sin(s.tw + timeSec * s.twSpeed));
-    ctx.globalAlpha = alpha;
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, s.r, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  ctx.globalAlpha = 1;
-
-  /* Орбита Солнца вокруг центра Галактики — ЭЛЛИПС с центром Галактики в ФОКУСЕ.
-     Строим его ПО ТОЧКАМ через ту же функцию sunAtTime(), которой движется само
-     Солнце: так линия гарантированно совпадает с фактической траекторией (ранее
-     эллипс рисовался «на глаз» с неверным поворотом и не проходил под Солнцем).
-     Перигалактион — в направлении угла sc.sunAngle (там же стартует спираль). */
-  ctx.save();
-  ctx.strokeStyle = "rgba(140, 190, 255, 0.35)";
-  ctx.lineWidth = 1.2;
-  ctx.setLineDash([6, 8]);
-  ctx.beginPath();
-  for (let i = 0; i <= 120; i++) {
-    const gD = (i / 120) * GALAXY_ORBIT_DAYS;             // галактические сутки за полный виток
-    const sp = sunAtTime(gD);
-    const pt = toScreen(sp.x, sp.y, sc);
-    if (i === 0) ctx.moveTo(pt.x, pt.y); else ctx.lineTo(pt.x, pt.y);
-  }
-  ctx.closePath();
-  ctx.stroke();
-  ctx.restore();
-
-  // маркер центра Галактики (стрелка, если за пределами экрана)
-  drawGalaxyCenterMarker(gc);
-
-  /* Хвост Солнца за центром Галактики: короткая светящаяся дуга позади текущей
-     точки орбиты — подчёркивает, что система летит по эллипсу вокруг фокуса. */
-  if (state.showTrails) {
-    ctx.save();
-    ctx.lineWidth = 2;
-    const gNow = scene.galaxyDays % GALAXY_ORBIT_DAYS;
-    for (let i = 40; i >= 1; i--) {
-      const t0 = sunAtTime(gNow - i * 6);
-      const t1 = sunAtTime(gNow - (i - 1) * 6);
-      const a = toScreen(t0.x, t0.y, sc), b = toScreen(t1.x, t1.y, sc);
-      ctx.strokeStyle = `rgba(255, 210, 120, ${0.05 + 0.5 * (1 - i / 40)})`;
-      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
-    }
-    ctx.restore();
-  }
-}
-
-function drawGalaxyCenterMarker(gc) {
-  const m = 30;
-  const inside = gc.x > m && gc.x < W - m && gc.y > m && gc.y < H - m;
-  ctx.save();
-  ctx.font = "11px 'Segoe UI', sans-serif";
-  ctx.textAlign = "center";
-  if (inside) {
-    ctx.fillStyle = "rgba(255, 215, 150, 0.85)";
-    ctx.beginPath();
-    ctx.arc(gc.x, gc.y, 4, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillText("⌾ Центр Галактики", gc.x, gc.y - 10);
-  } else {
-    // стрелка к центру на краю экрана
-    const cx = W / 2, cy = H / 2;
-    const a = Math.atan2(gc.y - cy, gc.x - cx);
-    const ex = cx + Math.cos(a) * (Math.min(W, H) / 2 - 46);
-    const ey = cy + Math.sin(a) * (Math.min(W, H) / 2 - 46);
-    ctx.translate(ex, ey);
-    ctx.rotate(a);
-    ctx.fillStyle = "rgba(255, 215, 150, 0.8)";
-    ctx.beginPath();
-    ctx.moveTo(10, 0); ctx.lineTo(-6, -7); ctx.lineTo(-6, 7);
-    ctx.closePath();
-    ctx.fill();
-    ctx.rotate(-a);
-    ctx.fillText("Центр Галактики", 0, 22);
-  }
-  ctx.restore();
-}
-
-function drawSun(timeSec) {
-  const cx = scene.cx, cy = scene.cy;
-  const pulse = 1 + 0.03 * Math.sin(timeSec * 2);
-  const R = SUN.drawR * (state.galaxyMode ? 0.7 : 1) * pulse;
-
-  // внешнее свечение
-  let g = ctx.createRadialGradient(cx, cy, R * 0.2, cx, cy, R * 4.2);
-  g.addColorStop(0, "rgba(255,200,90,0.55)");
-  g.addColorStop(0.4, "rgba(255,150,50,0.18)");
-  g.addColorStop(1, "rgba(255,120,40,0)");
-  ctx.fillStyle = g;
-  ctx.beginPath();
-  ctx.arc(cx, cy, R * 4.2, 0, Math.PI * 2);
-  ctx.fill();
-
-  // диск
-  g = ctx.createRadialGradient(cx - R * 0.25, cy - R * 0.25, R * 0.1, cx, cy, R);
-  g.addColorStop(0, "#fff3c4");
-  g.addColorStop(0.55, "#ffd465");
-  g.addColorStop(1, "#ff9d3c");
-  ctx.fillStyle = g;
-  ctx.beginPath();
-  ctx.arc(cx, cy, R, 0, Math.PI * 2);
-  ctx.fill();
-
-  if (state.showLabels) {
-    ctx.fillStyle = "rgba(255, 225, 150, 0.9)";
-    ctx.font = "12px 'Segoe UI', sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText("Солнце", cx, cy + R + 16);
-  }
-}
-
-function drawOrbits() {
-  const sc = scene;
-  if (state.galaxyMode) {
-    /* В режиме Галактики вместо эллипсов — «живые» спиральные траектории */
-    if (!state.showTrails || !state.showOrbits) return;
-    ctx.save();
-    ctx.lineWidth = 1.2;
-    for (const p of PLANETS) {
-      ctx.strokeStyle = hexToRgba(p.color, 0.5);
-      ctx.beginPath();
-      let started = false;
-      // хвост спирали: последние GAL_TRIALS_MAX точек назад по времени
-      for (let i = GAL_TRIALS_MAX; i >= 0; i--) {
-        const tDays = sc ? state.simDays - i * GAL_TRIAL_STRIDE : 0;
-        if (tDays < 0) continue;
-        const w = planetAtTime(p, tDays, sc);
-        const s = toScreen(w.x, w.y, sc);
-        if (!started) { ctx.moveTo(s.x, s.y); started = true; }
-        else ctx.lineTo(s.x, s.y);
-      }
-      ctx.stroke();
-    }
-    ctx.restore();
-    return;
-  }
-
-  if (!state.showOrbits) return;
-  /* Классический режим: эллиптические орбиты с РЕАЛЬНЫМ эксцентриситетом,
-     Солнце — в ФОКУСЕ каждой. Центр эллипса смещён от Солнца на c = a·e
-     в сторону, противоположную перигелию. */
-  const cx = W / 2, cy = H / 2;
-  ctx.save();
-  ctx.setLineDash([4, 6]);
-  for (const p of PLANETS) {
-    const e = p.ecc || 0;                                 // реальный ecc, без преувеличения
-    const aPx = orbitRadius(p);
-    const bPx = aPx * Math.sqrt(1 - e * e);
-    const rot = (p.omegaDeg * Math.PI) / 180;
-    // фокальный вектор (от центра эллипса к Солнцу) в экранных координатах
-    const fx = -e * aPx * Math.cos(rot);
-    const fy = -e * aPx * Math.sin(rot) * TILT;
-    ctx.strokeStyle = state.selected === p ? hexToRgba(p.color, 0.55) : "rgba(140, 165, 220, 0.22)";
-    ctx.lineWidth = state.selected === p ? 1.5 : 1;
-    ctx.beginPath();
-    ctx.ellipse(cx + fx, cy + fy, aPx, bPx * TILT, rot, 0, Math.PI * 2);
-    ctx.stroke();
-  }
-  ctx.restore();
-}
-
-/* =========================================================
    АСТЕРОИДНЫЙ ПОЯС — отрисовка (опциональный слой, клавиша B)
+   Все тела используют ОДНУ пропорциональную шкалу scaleAUtoPx,
+   поэтому пояс (2.22–3.38 а.е.) лежит строго между Марсом
+   (1.52 а.е.) и Юпитером (5.2 а.е.) и никогда не пересекает
+   их орбиты — как и в реальности.
    ========================================================= */
 
-/* Общая шкала «а.е. -> пиксели» для ВСЕХ тел: планеты и астероиды
-   используют одну и ту же функцию scaleAUtoPx (степенная a^0.52), поэтому пояс
-   (2.06–3.65 а.е.) лежит строго между Марсом (1.52 а.е., афелий 1.67) и Юпитером
-   (5.2 а.е., перигелий 4.95) и орбиты планет его не пересекают ни в одном режиме —
-   как и в реальности. Раньше у пояса была своя отдельная шкала — точки залезали
-   на витки планет, а Марс визуально оказывался внутри пояса. */
 function beltAUtoPx(aAU) { return scaleAUtoPx(aAU); }
 
-/* Точка на кеплеровской орбите вокруг произвольного «фокуса» (экранные координаты) */
-function keplerScreenPoint(fx, fy, aPx, ecc, E, omegaDeg, tiltY) {
-  const bPx = aPx * Math.sqrt(1 - ecc * ecc);
-  const k = keplerPoint(aPx, bPx, ecc, E);
-  const rot = (omegaDeg * Math.PI) / 180;
-  return {
-    x: fx + k.x * Math.cos(rot) - k.y * Math.sin(rot),
-    y: fy + (k.x * Math.sin(rot) + k.y * Math.cos(rot)) * tiltY,
-  };
-}
-
-/* Фоновые точки пояса: каждая со своей орбитой, движутся по Кеплеру.
-   В режиме Галактики рисуются вокруг текущего положения Солнца без спирали
-   (пояс виден как «облако», летящее вместе с системой). */
-/* Радиус большой полуоси астероида на экране для ТЕКУЩЕГО режима:
-   классика — общая шкала scaleAUtoPx; Галактика — та же шкала × GAL_SPIRAL_K,
-   что у спиралей планет (orbitRadiusGalaxy), поэтому пояс гарантированно
-   лежит между витками Марса и Юпитера и не пересекает их. */
-function beltRadiusPx(aAU) {
-  return state.galaxyMode ? scaleAUtoPx(aAU) * GAL_SPIRAL_K : scaleAUtoPx(aAU);
+/* Точка на круговой орбите вокруг центра (экранные координаты) */
+function circleScreenPoint(fx, fy, rPx, ang, tiltY) {
+  return { x: fx + Math.cos(ang) * rPx, y: fy + Math.sin(ang) * rPx * tiltY };
 }
 
 function drawBelt(timeSec) {
   if (!state.showBelt) return;
-  const sc = scene;
-  const cx = sc.cx, cy = sc.cy;
-  const zoom = state.galaxyMode ? sc.scale : 1;
+  const cx = W / 2, cy = H / 2;
   ctx.save();
+  /* Фоновые камни пояса: движутся по упрощённым круговым орбитам */
   for (const rock of beltRocks) {
-    const Mdeg = rock.M0 + (state.simDays / rock.periodDays) * 360;
-    const E = keplerAnomaly(Mdeg, rock.ecc);
-    const aPx = beltRadiusPx(rock.aAU);
-    let pt;
-    if (state.galaxyMode) {
-      // виток вокруг текущего положения Солнца по кеплеровой точке (эллипс с e rock.ecc)
-      const bPx = aPx * Math.sqrt(1 - rock.ecc * rock.ecc);
-      const kp = keplerPoint(aPx, bPx, rock.ecc, E);
-      const rot = (rock.omegaDeg * Math.PI) / 180;
-      pt = {
-        x: cx + kp.x * Math.cos(rot) - kp.y * Math.sin(rot),
-        y: cy + (kp.x * Math.sin(rot) + kp.y * Math.cos(rot)) * (TILT + rock.tilt),
-      };
-    } else {
-      pt = keplerScreenPoint(cx, cy, aPx, rock.ecc, E, rock.omegaDeg, TILT + rock.tilt);
-    }
+    const ang = circleAngle(state.simDays, rock.periodDays, rock.M0);
+    const pt = circleScreenPoint(cx, cy, beltAUtoPx(rock.aAU), ang, TILT + rock.tilt);
     if (pt.x < -5 || pt.x > W + 5 || pt.y < -5 || pt.y > H + 5) continue;
     ctx.globalAlpha = rock.alpha * (0.75 + 0.25 * Math.sin(rock.M0 + timeSec * 1.3));
     ctx.fillStyle = `rgb(${rock.gray}, ${rock.gray - 12}, ${rock.gray - 26})`;
     ctx.beginPath();
-    ctx.arc(pt.x, pt.y, Math.max(0.4, rock.r * zoom), 0, Math.PI * 2);
+    ctx.arc(pt.x, pt.y, rock.r, 0, Math.PI * 2);
     ctx.fill();
   }
   ctx.globalAlpha = 1;
 
-  /* Крупнейшие астероиды: видимые тела с подписями и орбитами-эллипсами */
+  /* Крупнейшие астероиды: видимые тела с подписями и круговыми орбитами */
   for (const a of BELT_ASTEROIDS) {
-    const Mdeg = a.M0 + (state.simDays / a.periodDays) * 360;
-    const e = a.ecc || 0;                                 // реальный ecc (Паллада 0.231 — самый вытянутый)
-    const E = keplerAnomaly(Mdeg, e);
-    const aPx = beltRadiusPx(a.mainAU);
-    let pos;
-    if (state.galaxyMode) {
-      // крупнейшие астероиды: кеплеров виток вокруг Солнца (фокус — Солнце)
-      const bPx = aPx * Math.sqrt(1 - e * e);
-      const kp = keplerPoint(aPx, bPx, e, E);
-      const rot = (a.omegaDeg * Math.PI) / 180;
-      pos = {
-        x: cx + kp.x * Math.cos(rot) - kp.y * Math.sin(rot),
-        y: cy + (kp.x * Math.sin(rot) + kp.y * Math.cos(rot)) * TILT,
-      };
-    } else {
-      pos = keplerScreenPoint(cx, cy, aPx, e, E, a.omegaDeg, TILT);
-      // орбита астероида — эллипс с Солнцем в фокусе
-      if (state.showOrbits) {
-        ctx.save();
-        ctx.strokeStyle = hexToRgba(a.color, 0.28);
-        ctx.lineWidth = 1;
-        ctx.setLineDash([3, 5]);
-        const rot = (a.omegaDeg * Math.PI) / 180;
-        const fx = cx - e * aPx * Math.cos(rot);
-        const fy = cy - e * aPx * Math.sin(rot) * TILT;
-        ctx.beginPath();
-        ctx.ellipse(fx, fy, aPx, aPx * Math.sqrt(1 - e * e) * TILT, rot, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.restore();
-      }
+    const ang = circleAngle(state.simDays, a.periodDays, (a.M0 * Math.PI) / 180);
+    const rPx = beltAUtoPx(a.mainAU);
+    const pos = circleScreenPoint(cx, cy, rPx, ang, TILT);
+
+    // орбита астероида — пунктирный круг (та же шкала, что у планет)
+    if (state.showOrbits) {
+      ctx.save();
+      ctx.strokeStyle = hexToRgba(a.color, 0.28);
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 5]);
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, rPx, rPx * TILT, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
     }
 
-    const R = Math.max(1.5, a.drawR * zoom);
+    const R = a.drawR;
     a._screen = { x: pos.x, y: pos.y, r: R };           // для попаданий курсора
 
     const isSel = state.selected === a;
@@ -872,7 +205,7 @@ function drawBelt(timeSec) {
       ctx.restore();
     }
 
-    // диск астероида: неровный многоугольник + кратерная штриховка
+    // диск астероида: неровный многоугольник с подсветкой со стороны Солнца
     const sunDir = Math.atan2(pos.y - cy, pos.x - cx);
     const g = ctx.createRadialGradient(
       pos.x - Math.cos(sunDir) * R * 0.4, pos.y - Math.sin(sunDir) * R * 0.4, R * 0.15,
@@ -907,41 +240,13 @@ function hexToRgba(hex, alpha) {
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
 }
 
-/* Траектория-спираль выбранной планеты (яркая, с градиентом затухания) */
-function drawSelectedTrail(p) {
-  if (!state.galaxyMode || !state.showTrails) return;
-  const sc = scene;
-  ctx.save();
-  ctx.lineWidth = 2;
-  const STEPS = 160;
-  const span = GAL_TRIALS_MAX * GAL_TRIAL_STRIDE; // суммарный охват в сутках
-  for (let i = 0; i < STEPS; i++) {
-    const t0 = state.simDays - span * (1 - i / STEPS);
-    const t1 = state.simDays - span * (1 - (i + 1) / STEPS);
-    if (t1 < 0 || t0 < 0) continue;
-    const a = planetAtTime(p, Math.max(0, t0), sc);
-    const b = planetAtTime(p, Math.max(0, t1), sc);
-    const sa = toScreen(a.x, a.y, sc), sb = toScreen(b.x, b.y, sc);
-    ctx.strokeStyle = hexToRgba(p.color, 0.15 + 0.75 * (i / STEPS));
-    ctx.beginPath();
-    ctx.moveTo(sa.x, sa.y);
-    ctx.lineTo(sb.x, sb.y);
-    ctx.stroke();
-  }
-  ctx.restore();
-}
-
 function drawPlanet(p, timeSec) {
   const pos = planetPosition(p);
-  let R = planetScreenRadius(p);
-  if (state.galaxyMode) R *= scene.scale;        // планеты масштабируются вместе со сценой
+  const R = planetScreenRadius(p);
   p._screen = { x: pos.x, y: pos.y, r: R }; // для попаданий
 
   const isSel = state.selected === p;
   const isHov = state.hovered === p;
-
-  // яркая спиральная траектория выбранной планеты
-  if (isSel) drawSelectedTrail(p);
 
   // подсветка выбранной/наведённой
   if (isSel || isHov) {
@@ -959,7 +264,7 @@ function drawPlanet(p, timeSec) {
   if (p.hasRings) drawRings(p, pos, R, "back");
 
   // тень падения света (от Солнца)
-  const sunDir = Math.atan2(pos.y - scene.cy, pos.x - scene.cx);
+  const sunDir = Math.atan2(pos.y - H / 2, pos.x - W / 2);
   const gx = pos.x - Math.cos(sunDir) * R * 0.45;
   const gy = pos.y - Math.sin(sunDir) * R * 0.45;
   const g = ctx.createRadialGradient(gx, gy, R * 0.15, pos.x, pos.y, R * 1.15);
@@ -1029,7 +334,7 @@ function drawMoon(planet, moon, pos, R, highlight) {
   ctx.restore();
 
   // диск луны с подсветкой со стороны планеты/Солнца
-  const sunDir = Math.atan2(pos.y - scene.cy, pos.x - scene.cx);
+  const sunDir = Math.atan2(pos.y - H / 2, pos.x - W / 2);
   const gx = mp.x - Math.cos(sunDir) * mp.r * 0.4;
   const gy = mp.y - Math.sin(sunDir) * mp.r * 0.4;
   const g = ctx.createRadialGradient(gx, gy, mp.r * 0.15, mp.x, mp.y, mp.r * 1.15);
@@ -1089,35 +394,18 @@ function frame(now) {
     state.simDays += dt * state.speed * (365.25 / EARTH_YEAR_SECONDS);
   }
 
-  computeScene();                        // камера/спирали для текущего кадра
   const timeSec = now / 1000;
   drawBackground(timeSec);
-  drawOrbits();
+  drawOrbits();                          // упрощённые круговые орбиты планет
+  drawCometOrbits();                     // эллиптические орбиты комет (пунктир)
   drawBelt(timeSec);                     // астероидный пояс + крупнейшие астероиды
   drawSun(timeSec);
   for (const p of PLANETS) drawPlanet(p, timeSec);
-  if (state.galaxyMode) drawGalaxyHud();
+  drawComets(timeSec);                   // кометы: ядро + кома + хвост от Солнца
 
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
-
-/* HUD в режиме Галактики: счётчик витков и пройденного пути */
-function drawGalaxyHud() {
-  const sc = scene;
-  const turns = sc.galaxyDays / GALAXY_ORBIT_DAYS;
-  ctx.save();
-  ctx.font = "12px 'Segoe UI', sans-serif";
-  ctx.textAlign = "left";
-  ctx.fillStyle = "rgba(150, 200, 255, 0.9)";
-  ctx.fillText(`🌌 Виток Солнца вокруг центра Галактики: ${turns.toFixed(2)}`, 20, H - 92);
-  ctx.fillStyle = "rgba(120, 160, 220, 0.75)";
-  // расстояние Солнца до центра Галактики (эллипс, центр — в фокусе)
-  const distKpc = sc.sunDist;                              // уже в кпк
-  ctx.fillText(`Солнце: ${distKpc.toFixed(2)} кпк от центра Галактики (центр — в фокусе эллипса)`, 20, H - 74);
-  ctx.fillText("Траектории планет — спирали: система движется, планеты вращаются", 20, H - 56);
-  ctx.restore();
-}
 
 /* ---------- Попадание курсора по планете / луне ---------- */
 function pickPlanet(mx, my) {
@@ -1146,6 +434,18 @@ function pickMoon(mx, my) {
   return best;
 }
 
+/* Попадание курсора по ядру кометы */
+function pickComet(mx, my) {
+  let best = null, bestDist = Infinity;
+  for (const c of COMETS) {
+    if (!c._screen) continue;
+    const d = Math.hypot(mx - c._screen.x, my - c._screen.y);
+    const hitR = Math.max(c._screen.r + 6, 13);
+    if (d <= hitR && d < bestDist) { best = c; bestDist = d; }
+  }
+  return best;
+}
+
 /* Попадание курсора по крупнейшему астероиду пояса */
 function pickAsteroid(mx, my) {
   let best = null, bestDist = Infinity;
@@ -1165,6 +465,8 @@ function pickAny(mx, my) {
   if (p) return { planet: p, moon: null };
   const a = state.showBelt ? pickAsteroid(mx, my) : null;
   if (a) return { asteroid: a };
+  const c = state.showComets ? pickComet(mx, my) : null;
+  if (c) return { comet: c };
   return null;
 }
 
@@ -1186,7 +488,21 @@ function formatPeriod(days) {
 }
 
 /* Карточка информации. Аргументы: планета (+опц. луна) ИЛИ объект-астероид */
-function showInfo(p, moon = null, asteroid = null) {
+function showInfo(p, moon = null, asteroid = null, comet = null) {
+  if (comet) {
+    const c = comet;
+    state.selected = c;
+    infoIcon.style.background = `radial-gradient(circle at 32% 30%, #ffffff, ${c.color} 45%, #2a3f66)`;
+    infoName.textContent = `${c.name}  ·  ${c.nameEn}`;
+    infoSize.textContent = "ядро ≈ 10–37 км (в масштабе не отображается)";
+    infoDist.textContent = `перигелий ${c.perihelionAU} / афелий ${c.aphelionAU} а.е. (a = ${c.aAU} а.е.)`;
+    infoPeriod.textContent = `${formatPeriod(c.periodDays)} · e=${c.ecc} — сильно вытянутая орбита`;
+    infoMoons.textContent = "—";
+    infoType.textContent = c.type;
+    infoDesc.textContent = c.desc;
+    infoPanel.classList.remove("hidden");
+    return;
+  }
   if (asteroid) {
     const a = asteroid;
     state.selected = a;
@@ -1240,10 +556,12 @@ const tooltip = document.getElementById("tooltip");
 
 canvas.addEventListener("mousemove", (e) => {
   const hit = pickAny(e.clientX, e.clientY);
-  state.hovered = hit ? (hit.asteroid || hit.planet) : null;
+  state.hovered = hit ? (hit.comet || hit.asteroid || hit.planet) : null;
   canvas.classList.toggle("hovering", !!hit);
   if (hit) {
-    tooltip.textContent = hit.asteroid
+    tooltip.textContent = hit.comet
+      ? `${hit.comet.name} — комета (нажмите для подробностей)`
+      : hit.asteroid
       ? `${hit.asteroid.name} — астероид главного пояса (нажмите для подробностей)`
       : hit.moon
       ? `${hit.moon.name} — луна план. ${hit.planet.name} (нажмите для подробностей)`
@@ -1263,7 +581,8 @@ canvas.addEventListener("mouseleave", () => {
 
 canvas.addEventListener("click", (e) => {
   const hit = pickAny(e.clientX, e.clientY);
-  if (hit && hit.asteroid) showInfo(null, null, hit.asteroid);
+  if (hit && hit.comet) showInfo(null, null, null, hit.comet);
+  else if (hit && hit.asteroid) showInfo(null, null, hit.asteroid);
   else if (hit) showInfo(hit.planet, hit.moon);
   else hideInfo();
 });
@@ -1272,7 +591,8 @@ canvas.addEventListener("click", (e) => {
 canvas.addEventListener("touchstart", (e) => {
   const t = e.touches[0];
   const hit = pickAny(t.clientX, t.clientY);
-  if (hit && hit.asteroid) { showInfo(null, null, hit.asteroid); e.preventDefault(); }
+  if (hit && hit.comet) { showInfo(null, null, null, hit.comet); e.preventDefault(); }
+  else if (hit && hit.asteroid) { showInfo(null, null, hit.asteroid); e.preventDefault(); }
   else if (hit) { showInfo(hit.planet, hit.moon); e.preventDefault(); }
 }, { passive: true });
 
@@ -1319,43 +639,20 @@ document.getElementById("chkBelt").addEventListener("change", (e) => {
   state.showBelt = e.target.checked;
   if (!state.showBelt && state.selected && state.selected.mainAU) hideInfo(); // скрыть карточку астероида
 });
+document.getElementById("chkComets").addEventListener("change", (e) => {
+  state.showComets = e.target.checked;
+  if (!state.showComets && state.selected && state.selected.aAU) hideInfo();  // скрыть карточку кометы
+});
 
-/* ---------- Режим «Галактика»: переключение и управление вихрем ---------- */
-const btnMode       = document.getElementById("btnMode");
-const galaxyBlock   = document.getElementById("galaxyBlock");
-const swirlSlider   = document.getElementById("swirlSlider");
-const swirlLabel    = document.getElementById("swirlLabel");
-const chkTrails     = document.getElementById("chkTrails");
-const topHint       = document.querySelector(".topbar .hint");
-const footnote      = document.getElementById("footnote");
-
-function setGalaxyMode(on) {
-  state.galaxyMode = on;
-  btnMode.classList.toggle("active", on);
-  btnMode.textContent = on ? "☀️ Классика" : "🌌 Галактика";
-  galaxyBlock.classList.toggle("hidden", !on);
-  topHint.textContent = on
-    ? "Солнечная система летит вокруг центра Галактики — траектории планет закручиваются в спирали"
-    : "Нажмите на планету или луну, чтобы узнать о ней больше";
-  footnote.innerHTML = on
-    ? "Режим «Галактика»: Солнце движется по эллипсу вокруг центра Галактики (он — в фокусе), планеты — спирали-циклоиды вокруг Солнца. " +
-      "Реальный галактический год ≈ 230 млн лет; здесь виток Солнца = 30 земных лет, чтобы порядок орбит читался глазом. " +
-      "Витки планет и астероидов — кеплеровы эллипсы с РЕАЛЬНЫМ эксцентриситетом: афелий Марса (1.67 а.е.) не дотягивает до перигелия пояса (~2.1 а.е.), пояс не пересекает орбиты планет. " +
-      "Масштаб лунных орбит условно увеличен."
-    : "Демонстрация: орбитальные периоды пропорциональны реальным (Земля = 365 сут ≈ 20 сек при скорости 1×). " +
-      "Планеты и астероиды движутся по эллипсам Кеплера с Солнцем в фокусе, с РЕАЛЬНЫМИ эксцентриситетами (без преувеличения вытянутости). " +
-      "Расстояния сжаты степенной шкалой a^0.52 с сохранением порядка; размеры тел условны. Масштаб лунных орбит условно увеличен.";
-}
-
-btnMode.addEventListener("click", () => setGalaxyMode(!state.galaxyMode));
-
-function setSwirl(v) {
-  state.swirl = v;
-  swirlSlider.value = v;
-  swirlLabel.textContent = `${(+v.toFixed(1))}×`;
-}
-swirlSlider.addEventListener("input", () => setSwirl(parseFloat(swirlSlider.value)));
-chkTrails.addEventListener("change", (e) => state.showTrails = e.target.checked);
+/* Сноска: описание текущей демонстрации */
+const footnote = document.getElementById("footnote");
+footnote.innerHTML =
+  "Демонстрация v1.7: вместо режима «Галактика» — УПРОЩЁННЫЕ КРУГОВЫЕ орбиты с ПРОПОРЦИОНАЛЬНЫМИ " +
+  "реальными расстояниями (радиус на экране ∝ число а.е.: Нептун ровно в 77 раз дальше Меркурия). " +
+  "Периоды пропорциональны настоящим (Земля = 365 сут ≈ 20 сек при скорости 1×). " +
+  "Кометы движутся по реальным ЭЛЛИПТИЧЕСКИМ орбитам: быстрые у Солнца, медленные на окраине, " +
+  "хвост всегда направлен от Солнца. Пояс астероидов — строго между Марсом и Юпитером. " +
+  "Размеры тел условны; масштаб лунных орбит увеличен.";
 
 /* Горячие клавиши */
 window.addEventListener("keydown", (e) => {
@@ -1365,9 +662,6 @@ window.addEventListener("keydown", (e) => {
     updatePlayButton();
   } else if (e.key === "Escape") {
     hideInfo();
-  } else if ((e.key === "g" || e.key === "G" || e.key === "п" || e.key === "П") &&
-             !e.ctrlKey && !e.metaKey && !e.altKey) {
-    setGalaxyMode(!state.galaxyMode);
   } else if ((e.key === "m" || e.key === "M" || e.key === "ь" || e.key === "Ь") &&
              !e.ctrlKey && !e.metaKey && !e.altKey) {
     state.showMoons = !state.showMoons;
@@ -1378,6 +672,12 @@ window.addEventListener("keydown", (e) => {
     const chk = document.getElementById("chkBelt");
     chk.checked = state.showBelt;
     if (!state.showBelt && state.selected && state.selected.mainAU) hideInfo();
+  } else if ((e.key === "c" || e.key === "C" || e.key === "с" || e.key === "С") &&
+             !e.ctrlKey && !e.metaKey && !e.altKey) {
+    state.showComets = !state.showComets;
+    const chk = document.getElementById("chkComets");
+    chk.checked = state.showComets;
+    if (!state.showComets && state.selected && state.selected.aAU) hideInfo();
   } else if (e.key === "+" || e.key === "=") {
     setSpeed(Math.min(10, +(state.speed + 0.5).toFixed(1)));
   } else if (e.key === "-") {
@@ -1386,5 +686,4 @@ window.addEventListener("keydown", (e) => {
 });
 
 setSpeed(1);
-setSwirl(1);
 updatePlayButton();
