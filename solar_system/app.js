@@ -6,15 +6,26 @@
    с фактами, управление: воспроизведение/пауза, скорость.
    ========================================================= */
 
-/* Версия сборки — видна в заголовке страницы, в шапке и в консоли,
-   чтобы по открытой страничке сразу было понятно, какая сборка запущена. */
-const VERSION = "v2.1 (Кометы замедлены до единой шкалы с планетами: 1 год = 20 сек при 1×; Галлея ≈ 25 мин, Энке ≈ 66 с)";
+/* Версия сборки — ТОЛЬКО номер, без описаний (по требованию).
+   Видна в заголовке вкладки, в шапке страницы и в консоли. */
+const VERSION = "v2.2";
 document.title = `Солнечная система ${VERSION}`;
 console.log(`%c☀️ Солнечная система — сборка: ${VERSION}`, "color:#ffd75e;font-weight:bold");
 /* Бейдж версии в шапке страницы */
 {
   const badge = document.getElementById("versionBadge");
   if (badge) badge.textContent = VERSION;
+}
+
+/* ---------- Общие вспомогательные функции ---------- */
+function hexToRgba(hex, alpha) {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+}
+function shadeDown(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  const f = (v) => Math.round(v * 0.45);
+  return `rgb(${f((n >> 16) & 255)}, ${f((n >> 8) & 255)}, ${f(n & 255)})`;
 }
 
 const canvas = document.getElementById("space");
@@ -71,12 +82,16 @@ function circleAngle(simDays, periodDays, phase0) {
    • "ellipse" — РЕАЛЬНЫЙ эллипс Кеплера (a, e из данных планет, без
      преувеличений), Солнце строго в ФОКУСЕ; движение неравномерно:
      быстрее в перигелии, медленнее в афелии (II закон Кеплера).
-   • "circle"  — упрощённая круговая орбита с радиусом = a, Солнце в центре. */
+   • "circle"  — упрощённая круговая орбита с радиусом = a, Солнце в центре.
+   Возвращает { x, y, rAU }: экранная позиция + НАСТОЯЩЕЕ расстояние тела
+   до Солнца в а.е. (r = a(1 − e·cosE)) — именно по нему определяется,
+   «за» тело Солнцем или «перед» ним (глубина sortKey). */
 function planetPosition(p) {
   if (state.orbitMode === "circle") {
     const rPx = scaleAUtoPx(p.orbitAU);
-    return circleScreenPoint(W / 2, H / 2, rPx,
+    const pt = circleScreenPoint(W / 2, H / 2, rPx,
       circleAngle(state.simDays, p.periodDays, p.phase0), TILT);
+    return { x: pt.x, y: pt.y, rAU: p.orbitAU };
   }
   // Эллипс Кеплера: большая полуось a и эксцентриситет e — реальные.
   // Средней аномалией M служит угол обращения по времени (линейно растёт
@@ -84,13 +99,23 @@ function planetPosition(p) {
   const aPx = scaleAUtoPx(p.orbitAU);
   const bPx = aPx * Math.sqrt(1 - p.ecc * p.ecc);
   const Mraw = circleAngle(state.simDays, p.periodDays, p.phase0);
-  const E = keplerSolve(((Mraw + Math.PI) % (Math.PI * 2)) - Math.PI, p.ecc);
-  const ox = Math.cos(E) * aPx - aPx * p.ecc;   // фокус (Солнце) в начале координат
-  const oy = Math.sin(E) * bPx;
+  const Ecc = keplerSolve(((Mraw + Math.PI) % (Math.PI * 2)) - Math.PI, p.ecc);
+  const rAU = p.orbitAU * (1 - p.ecc * Math.cos(Ecc));   // истинное расстояние до Солнца
+  const ox = Math.cos(Ecc) * aPx - aPx * p.ecc;   // фокус (Солнце) в начале координат
+  const oy = Math.sin(Ecc) * bPx;
   const w = (p.omegaDeg * Math.PI) / 180;       // ориентация эллипса на плоскости
   const rx = ox * Math.cos(w) - oy * Math.sin(w);
   const ry = (ox * Math.sin(w) + oy * Math.cos(w)) * TILT;
-  return { x: W / 2 + rx, y: H / 2 + ry };
+  return { x: W / 2 + rx, y: H / 2 + ry, rAU };
+}
+
+/* Глубина тела для правильного перекрытия Солнцем:
+   знак +1, если тело на ДАЛЬНЕЙ половине орбиты (y > центра — «за» Солнцем),
+   −1 — на ближней («перед»). sortKey больше → рисуется позже (поверх).
+   Тело «за» Солнцем всегда получает меньший ключ и скрывается его диском. */
+function depthSortKey(rAU, y) {
+  const sign = y >= H / 2 ? 1 : -1;
+  return sign * rAU;
 }
 
 /* Экранное расстояние планеты от центра (для попаданий и подписей) */
@@ -129,20 +154,21 @@ function keplerSolve(M, e) {
 function cometPosition(c) {
   const aPx = cometAPx(c);                       // экранная полуось (не за край экрана)
   const bPx = aPx * Math.sqrt(1 - c.ecc * c.ecc);
-  /* Демонстрационная шкала: тот же темп, что у планет (1 год = 20 сек при 1×);
-     пропорции реальных периодов сохранены. */
-  const periodSec = c.periodYr * DEMO_COMET_YEAR_SECONDS;
-  const M = ((performance.now() / 1000) * state.speed / periodSec) * Math.PI * 2
-            + (c.phase || 0);
-  const E = keplerSolve(((M + Math.PI) % (Math.PI * 2)) - Math.PI, c.ecc);
+  /* Движение кометы синхронизировано с модельным временем симуляции
+     (state.simDays): при паузе комета останавливается, при «Сбросе» —
+     возвращается на исходную точку. Период в сутках: T = a^1.5 лет. */
+  const periodDays = c.periodYr * 365.25;
+  const Mraw = circleAngle(state.simDays, periodDays, c.phase || 0);
+  const Ecc = keplerSolve(((Mraw + Math.PI) % (Math.PI * 2)) - Math.PI, c.ecc);
+  const rAU = c.aAU * (1 - c.ecc * Math.cos(Ecc));   // истинное расстояние до Солнца
   // координаты в плоскости орбиты (фокус — Солнце — в центре экрана)
-  const ox = Math.cos(E) * aPx - aPx * c.ecc;      // ось к перигелию
-  const oy = Math.sin(E) * bPx;
+  const ox = Math.cos(Ecc) * aPx - aPx * c.ecc;      // ось к перигелию
+  const oy = Math.sin(Ecc) * bPx;
   // поворот на долготу перигелия ω и «наклон» вида сверху вниз
   const w = (c.omegaDeg * Math.PI) / 180;
   const rx = ox * Math.cos(w) - oy * Math.sin(w);
   const ry = (ox * Math.sin(w) + oy * Math.cos(w)) * TILT;
-  return { x: W / 2 + rx, y: H / 2 + ry };
+  return { x: W / 2 + rx, y: H / 2 + ry, rAU };
 }
 
 /* Позиция астероида главного пояса: круговая орбита (пояс близок к круговому) */
@@ -229,11 +255,17 @@ function drawOrbits() {
 }
 
 /* ---------- Солнце с пульсирующим свечением ---------- */
+let sunScreenR = 34;   // текущий экранный радиус диска Солнца (для перекрытия тел)
+
 function drawSun(timeSec) {
   const cx = W / 2, cy = H / 2;
   const pulse = 1 + 0.05 * Math.sin(timeSec * 1.7);
-  const baseR = state.realScale ? Math.max(SUN.realRel * 0.55, 26) : SUN.drawR;
+  /* В режиме реальных размеров Солнце масштабируется так же, как планеты
+     (радиус ∝ realRel), поэтому «заходящие за Солнце» планеты действительно
+     попадают под его диск. Минимум 8 px — чтобы Солнце не исчезало. */
+  const baseR = state.realScale ? Math.max(SUN.realRel * 4, 8) : SUN.drawR;
   const R = baseR * pulse;
+  sunScreenR = R;
   const halo = ctx.createRadialGradient(cx, cy, R * 0.2, cx, cy, R * 4.2);
   halo.addColorStop(0, "rgba(255, 210, 110, 0.55)");
   halo.addColorStop(0.4, "rgba(255, 170, 60, 0.16)");
@@ -261,12 +293,6 @@ function drawSun(timeSec) {
 /* ---------- Кометы: данные, орбиты и отрисовка ----------
    Реальные параметры: a — большая полуось, ecc — эксцентриситет,
    период T = a^1.5 лет (III закон Кеплера), omegaDeg — долгота перигелия. */
-/* Демонстрационная шкала времени комет: 1 условный «год» кометы = 20 сек
-   (та же базовая шкала, что у планет: Земля 365 сут ≈ 20 сек при 1×).
-   Виток Галлея (75 лет) ≈ 25 минут, Энке (3.3 года) ≈ 66 секунд; ПРОПОРЦИИ
-   реальных периодов сохранены — Энке обгоняет Галлею ровно в 23 раза. */
-const DEMO_COMET_YEAR_SECONDS = EARTH_YEAR_SECONDS;
-
 /* Экранная большая полуось кометы: та же степенная шкала, что у планет,
    но не дальше края экрана (у сильно вытянутых эллипсов дальняя точка
    афелия может выходить за холст). */
@@ -324,20 +350,22 @@ function drawCometOrbits() {
   ctx.restore();
 }
 
-function drawComets(timeSec) {
+/* layer === "back" — кометы за Солнцем (нижняя половина вида), их рисовать
+   ДО диска Солнца; "front" — перед Солнцем, после планет. */
+function drawComets(timeSec, layer) {
   if (!state.showComets) return;
   const cx = W / 2, cy = H / 2;
-  /* Обратная степенной шкале функция: экранное расстояние → а.е. */
-  const toAU = (px) => AU_MAX * Math.pow(px / availPx(), 1 / SCALE_POW);
   for (const c of COMETS) {
-    const pos = cometPosition(c);
-    // расстояние до Солнца в а.е. (в плоскости орбиты, без учёта наклона вида)
-    const rAU = toAU(Math.hypot(pos.x - cx, (pos.y - cy) / TILT));
-    const R = 2.6;                                               // ядро (в масштабе не отображается)
-    c._screen = { x: pos.x, y: pos.y, r: Math.max(R, 8) };
+    const pos = cometPosition(c);                 // rAU — истинное расстояние по эллипсу Кеплера
+    c._screen = { x: pos.x, y: pos.y, r: Math.max(2.6, 8) };
+
+    const behind = pos.y >= cy;                   // «за» Солнцем или «перед» ним
+    if ((layer === "back") !== behind) continue;
+
+    const R = 2.6;                               // ядро (в масштабе не отображается)
 
     // яркость и длина хвоста растут при приближении к Солнцу (активность комет)
-    const act = Math.max(0, Math.min(1, 3.2 / (rAU + 0.6)));     // ~1 у Солнца, → 0 на окраине
+    const act = Math.max(0, Math.min(1, 3.2 / (pos.rAU + 0.6)));  // ~1 у Солнца, → 0 на окраине
     if (act <= 0.03) {
       ctx.fillStyle = hexToRgba(c.color, 0.5);                   // далеко — лишь тусклое ядро
       ctx.beginPath();
@@ -605,24 +633,30 @@ function circleScreenPoint(fx, fy, rPx, ang, tiltY) {
 }
 
 /* Позиция крупнейшего астероида: в режиме "ellipse" — эллипс Кеплера
-   с Солнцем в фокусе; в режиме "circle" — упрощённый круг. */
+   с Солнцем в фокусе; в режиме "circle" — упрощённый круг.
+   Возвращает { x, y, rAU } — rAU нужно для корректного перекрытия Солнцем. */
 function asteroidEllipsePos(a, cx, cy) {
   if (state.orbitMode === "circle") {
-    return circleScreenPoint(cx, cy, beltAUtoPx(a.mainAU),
+    const pt = circleScreenPoint(cx, cy, beltAUtoPx(a.mainAU),
       circleAngle(state.simDays, a.periodDays, (a.M0 * Math.PI) / 180), TILT);
+    return { x: pt.x, y: pt.y, rAU: a.mainAU };
   }
   const aPx = beltAUtoPx(a.mainAU);
   const bPx = aPx * Math.sqrt(1 - a.ecc * a.ecc);
   const Mraw = circleAngle(state.simDays, a.periodDays, (a.M0 * Math.PI) / 180);
-  const E = keplerSolve(((Mraw + Math.PI) % (Math.PI * 2)) - Math.PI, a.ecc);
-  const ox = Math.cos(E) * aPx - aPx * a.ecc;
-  const oy = Math.sin(E) * bPx;
+  const Ecc = keplerSolve(((Mraw + Math.PI) % (Math.PI * 2)) - Math.PI, a.ecc);
+  const rAU = a.mainAU * (1 - a.ecc * Math.cos(Ecc));   // истинное расстояние до Солнца
+  const ox = Math.cos(Ecc) * aPx - aPx * a.ecc;
+  const oy = Math.sin(Ecc) * bPx;
   const w = (a.omegaDeg * Math.PI) / 180;   // долгота перигелия из данных
   return { x: cx + ox * Math.cos(w) - oy * Math.sin(w),
-           y: cy + (ox * Math.sin(w) + oy * Math.cos(w)) * TILT };
+           y: cy + (ox * Math.sin(w) + oy * Math.cos(w)) * TILT, rAU };
 }
 
-function drawBelt(timeSec) {
+/* layer === "back" — камни и астероиды ЗА Солнцем (нижняя половина вида):
+   рисуем до диска Солнца; "front" — ПЕРЕД Солнцем: после планет.
+   Тело, попавшее под диск Солнца на дальней половине, экранируется им. */
+function drawBelt(timeSec, layer) {
   if (!state.showBelt) return;
   const cx = W / 2, cy = H / 2;
   ctx.save();
@@ -631,6 +665,9 @@ function drawBelt(timeSec) {
     const ang = circleAngle(state.simDays, rock.periodDays, rock.M0);
     const pt = circleScreenPoint(cx, cy, beltAUtoPx(rock.aAU), ang, TILT + rock.tilt);
     if (pt.x < -5 || pt.x > W + 5 || pt.y < -5 || pt.y > H + 5) continue;
+    // слоение по глубине + экранирование диском Солнца для дальних камней
+    if ((layer === "back") !== (pt.y >= cy)) continue;
+    if (layer === "back" && Math.hypot(pt.x - cx, pt.y - cy) < sunScreenR) continue;
     ctx.globalAlpha = rock.alpha * (0.75 + 0.25 * Math.sin(rock.M0 + timeSec * 1.3));
     ctx.fillStyle = `rgb(${rock.gray}, ${rock.gray - 12}, ${rock.gray - 26})`;
     ctx.beginPath();
@@ -645,6 +682,10 @@ function drawBelt(timeSec) {
   for (const a of BELT_ASTEROIDS) {
     const rPx = beltAUtoPx(a.mainAU);
     const pos = asteroidEllipsePos(a, cx, cy);
+    // слоение по глубине: «за» Солнцем — в back, «перед» — в front
+    if ((layer === "back") !== (pos.y >= cy)) continue;
+    // заходящий за Солнце астероид скрывается его диском
+    if (layer === "back" && Math.hypot(pos.x - cx, pos.y - cy) < sunScreenR + a.drawR) continue;
 
     // орбита астероида — пунктир (круг или эллипс с Солнцем в фокусе)
     if (state.showOrbits) {
@@ -711,15 +752,18 @@ function drawBelt(timeSec) {
   ctx.restore();
 }
 
-function hexToRgba(hex, alpha) {
-  const n = parseInt(hex.slice(1), 16);
-  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
-}
-
-function drawPlanet(p, timeSec) {
+/* layer === "back" — планета на дальней половине вида (за Солнцем): рисуется
+   ДО диска Солнца и экранируется им целиком; "front" — перед Солнцем. */
+function drawPlanet(p, timeSec, layer) {
   const pos = planetPosition(p);
   const R = planetScreenRadius(p);
   p._screen = { x: pos.x, y: pos.y, r: R }; // для попаданий
+
+  const behind = pos.y >= H / 2;            // «за» Солнцем или «перед» ним (по глубине вида)
+  if ((layer === "back") !== behind) return;
+  /* Зашедшая за Солнце планета скрывается его изображением: если центр
+     планеты на дальней половине попал под диск Солнца — не рисуем вовсе. */
+  if (behind && Math.hypot(pos.x - W / 2, pos.y - H / 2) < sunScreenR + R * 0.35) return;
 
   const isSel = state.selected === p;
   const isHov = state.hovered === p;
@@ -831,12 +875,6 @@ function drawMoon(planet, moon, pos, R, highlight) {
   }
 }
 
-function shadeDown(hex) {
-  const n = parseInt(hex.slice(1), 16);
-  const f = (v) => Math.round(v * 0.45);
-  return `rgb(${f((n >> 16) & 255)}, ${f((n >> 8) & 255)}, ${f(n & 255)})`;
-}
-
 function drawRings(p, pos, R, part) {
   ctx.save();
   ctx.translate(pos.x, pos.y);
@@ -874,10 +912,15 @@ function frame(now) {
   drawBackground(timeSec);
   drawOrbits();                          // орбиты планет: эллипсы Кеплера или упрощённые круги
   drawCometOrbits();                     // эллиптические орбиты комет (пунктир)
-  drawBelt(timeSec);                     // астероидный пояс + крупнейшие астероиды
-  drawSun(timeSec);
-  for (const p of PLANETS) drawPlanet(p, timeSec);
-  drawComets(timeSec);                   // кометы: ядро + кома + хвост от Солнца
+  /* Дальний слой: тела «за» Солнцем — их перекроет диск Солнца */
+  drawBelt(timeSec, "back");             // дальняя половина пояса астероидов
+  for (const p of PLANETS) drawPlanet(p, timeSec, "back");
+  drawComets(timeSec, "back");           // кометы за Солнцем
+  drawSun(timeSec);                      // Солнце поверх дальних тел
+  /* Ближний слой: тела «перед» Солнцем */
+  for (const p of PLANETS) drawPlanet(p, timeSec, "front");
+  drawBelt(timeSec, "front");            // ближняя половина пояса
+  drawComets(timeSec, "front");          // кометы перед Солнцем: ядро + кома + хвост
 
   requestAnimationFrame(frame);
 }
@@ -1142,16 +1185,7 @@ document.getElementById("chkComets").addEventListener("change", (e) => {
 
 /* Сноска: описание текущей демонстрации */
 const footnote = document.getElementById("footnote");
-footnote.innerHTML =
-  "Демонстрация v2.1: два режима орбит — реальные ЭЛЛИПСЫ Кеплера (Солнце в фокусе каждой орбиты, " +
-  "без преувеличения эксцентриситетов) и упрощённые КРУГИ (кнопка «◯ Упрощённые круги» / клавиша O). " +
-  "Расстояния — степенная (сжатая к логарифмической) шкала r ∝ a^0.52: внутренняя система видна подробно, " +
-  "порядок и непересечение орбит сохранены. Периоды пропорциональны настоящим (Земля = 365 сут ≈ 20 сек при 1×). " +
-  "Пояс астероидов (2.2–3.4 а.е.) лежит строго между Марсом и Юпитером. " +
-  "Кометы (Галлея, Хейл-Боппа, Энке, NEOWISE) — на реальных вытянутых эллипсах Кеплера с Солнцем в фокусе; " +
-  "хвост всегда направлен от Солнца. Скорость комет — единая наглядная шкала с планетами (1 год = 20 сек при 1×): " +
-  "виток Галлея ≈ 25 мин, Энке ≈ 66 сек; пропорции реальных периодов сохранены. " +
-  "Размеры тел условны; масштаб лунных орбит увеличен.";
+footnote.textContent = VERSION;
 
 /* Горячие клавиши */
 window.addEventListener("keydown", (e) => {
