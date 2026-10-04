@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Солнечная система — интерактивная демонстрация</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- Космос -->
+    <canvas id="space"></canvas>
+
+    <!-- Верхняя панель -->
+    <header class="topbar">
+      <h1>☀️ Солнечная система</h1>
+      <p class="hint">Нажмите на планету, чтобы узнать о ней больше</p>
+    </header>
+
+    <!-- Панель управления -->
+    <div class="controls" role="group" aria-label="Управление симуляцией">
+      <button id="btnPlayPause" class="ctrl-btn primary" title="Воспроизведение / Пауза (Пробел)">
+        ⏸ Пауза
+      </button>
+      <button id="btnReset" class="ctrl-btn" title="Сбросить время и выбор">⟲ Сброс</button>
+
+      <div class="speed-block">
+        <label for="speedSlider">Скорость:&nbsp;<span id="speedLabel">1×</span></label>
+        <input id="speedSlider" type="range" min="0" max="10" step="0.1" value="1" />
+        <div class="speed-presets">
+          <button data-speed="0.5">0.5×</button>
+          <button data-speed="1">1×</button>
+          <button data-speed="2">2×</button>
+          <button data-speed="5">5×</button>
+          <button data-speed="10">10×</button>
+        </div>
+      </div>
+
+      <div class="toggle-block">
+        <label><input type="checkbox" id="chkOrbits" checked /> Орбиты</label>
+        <label><input type="checkbox" id="chkLabels" checked /> Названия</label>
+        <label><input type="checkbox" id="chkScale" /> Реальные размеры</label>
+      </div>
+    </div>
+
+    <!-- Боковая карточка с информацией о планете -->
+    <aside id="infoPanel" class="info-panel hidden" aria-live="polite">
+      <button id="btnCloseInfo" class="close-btn" title="Закрыть">✕</button>
+      <div class="info-planet-icon" id="infoIcon"></div>
+      <h2 id="infoName">—</h2>
+      <ul class="info-list">
+        <li><span class="lbl">Диаметр</span><span class="val" id="infoSize">—</span></li>
+        <li><span class="lbl">Расстояние от Солнца</span><span class="val" id="infoDist">—</span></li>
+        <li><span class="lbl">Орбитальный период</span><span class="val" id="infoPeriod">—</span></li>
+        <li><span class="lbl">Спутники</span><span class="val" id="infoMoons">—</span></li>
+        <li><span class="lbl">Тип</span><span class="val" id="infoType">—</span></li>
+      </ul>
+      <p class="info-desc" id="infoDesc"></p>
+    </aside>
+
+    <!-- Подсказка при наведении -->
+    <div id="tooltip" class="tooltip hidden"></div>
+
+    <footer class="footnote">
+      Демонстрация: орбитальные периоды пропорциональны реальным (Земля = 365 сут ≈ 20&nbsp;сек при скорости 1×).
+      Расстояния и размеры условны для наглядности.
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
