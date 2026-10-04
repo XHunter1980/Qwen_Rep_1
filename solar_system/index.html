@@ -23,6 +23,7 @@
         ⏸ Пауза
       </button>
       <button id="btnReset" class="ctrl-btn" title="Сбросить время и выбор">⟲ Сброс</button>
+      <button id="btnMode" class="ctrl-btn mode" title="Переключить режим (G)">🌌 Галактика</button>
 
       <div class="speed-block">
         <label for="speedSlider">Скорость:&nbsp;<span id="speedLabel">1×</span></label>
@@ -40,6 +41,12 @@
         <label><input type="checkbox" id="chkOrbits" checked /> Орбиты</label>
         <label><input type="checkbox" id="chkLabels" checked /> Названия</label>
         <label><input type="checkbox" id="chkScale" /> Реальные размеры</label>
+      </div>
+
+      <div id="galaxyBlock" class="toggle-block galaxy-block hidden">
+        <label>Вихрь:&nbsp;<span id="swirlLabel">1×</span></label>
+        <input id="swirlSlider" type="range" min="0.2" max="5" step="0.1" value="1" title="Скорость движения Солнца по галактической орбите" />
+        <label><input type="checkbox" id="chkTrails" checked /> Траектории-спирали</label>
       </div>
     </div>
 
@@ -61,7 +68,7 @@
     <!-- Подсказка при наведении -->
     <div id="tooltip" class="tooltip hidden"></div>
 
-    <footer class="footnote">
+    <footer class="footnote" id="footnote">
       Демонстрация: орбитальные периоды пропорциональны реальным (Земля = 365 сут ≈ 20&nbsp;сек при скорости 1×).
       Расстояния и размеры условны для наглядности.
     </footer>

@@ -93,6 +93,16 @@ const PLANETS = [
 
 /* ---------- Состояние симуляции ---------- */
 const EARTH_YEAR_SECONDS = 20;     // 1 земной год = 20 сек при скорости 1×
+
+/* Режим «Галактика»: Солнце движется по галактической орбите,
+   планеты — спираль (циклоида) вокруг точки Солнца.
+   GALAXY_ORBIT_DAYS: модельные сутки на один виток Солнца вокруг центра Галактики.
+   Вихрь 1× подобран так, чтобы за один виток Солнца Земля успевала сделать ~4 оборота
+   (реально ≈ 230 млн лет / 365 сут, для наглядности масштаб сжат). */
+const GALAXY_ORBIT_DAYS = 1461;    // ≈ 4 земных года на виток Солнца (при вихре 1×)
+const GAL_TRIALS_MAX = 900;        // точек в хвосте спирали
+const GAL_TRIAL_STRIDE = 2;        // шаг записи точки траектории (в модельных сутках)
+
 const state = {
   playing: true,
   speed: 1,
@@ -102,10 +112,16 @@ const state = {
   showOrbits: true,
   showLabels: true,
   realScale: false,
+  galaxyMode: false,    // режим движения по Галактике
+  swirl: 1,             // множитель скорости вихря
+  showTrails: true,     // рисовать спиральные траектории
 };
 
-/* ---------- Звёздный фон ---------- */
+/* ---------- Звёздный фон + галактика ---------- */
 let stars = [];
+let bgStars = [];   // дальние звёзды Галактики (в координатах галакт. центра)
+let dustLanes = []; // пылевые рукава спиральной галактики
+
 function makeStars(w, h) {
   stars = [];
   const count = Math.floor((w * h) / 2600);
@@ -119,10 +135,62 @@ function makeStars(w, h) {
       twSpeed: 0.4 + Math.random() * 1.6,
     });
   }
+
+  /* Дальние звёзды для режима «Галактика»: распределены по лог-радиусу
+     вокруг галактического центра (0,0 в «галактических» координатах). */
+  bgStars = [];
+  const viewR = Math.hypot(w, h);
+  const nBg = Math.floor((w * h) / 1400);
+  for (let i = 0; i < nBg; i++) {
+    const ang = Math.random() * Math.PI * 2;
+    const rr = viewR * Math.pow(Math.random(), 0.6);
+    bgStars.push({
+      x: Math.cos(ang) * rr,
+      y: Math.sin(ang) * rr * 0.62,           // наклон плоскости Галактики
+      r: Math.random() * 1.2 + 0.2,
+      a: Math.random() * 0.6 + 0.15,
+      tw: Math.random() * Math.PI * 2,
+      twSpeed: 0.3 + Math.random() * 1.4,
+    });
+  }
+
+  /* Пылевые рукава: логарифмические спирали из «облаков» */
+  dustLanes = [];
+  const arms = 4;
+  for (let a = 0; a < arms; a++) {
+    const arm = [];
+    const phase = (a / arms) * Math.PI * 2;
+    for (let i = 0; i < 90; i++) {
+      const t = i / 89;
+      const rr = 120 + t * viewR * 1.6;
+      const th = phase + t * 3.2;             // закрученность рукава
+      arm.push({
+        x: Math.cos(th) * rr,
+        y: Math.sin(th) * rr * 0.62,
+        r: 26 + Math.random() * 60,
+        alpha: 0.05 + 0.05 * (1 - t),
+        hue: 225 + Math.random() * 50,
+      });
+    }
+    dustLanes.push(arm);
+  }
 }
 
 /* ---------- Компонновка / размеры ---------- */
 let W = 0, H = 0, DPR = 1;
+
+/* Адаптивный радиус галактической орбиты Солнца и zoom:
+   орбита Солнца + спираль внешней планеты всегда помещаются на экране.
+   Объявлено до resize(), чтобы не зависеть от TDZ. */
+let galSunR = 260;
+let GALAXY_ZOOM = 0.5;
+function updateGalaxyScale() {
+  const base = Math.min(W, H) || 800;
+  galSunR = base * 0.34;
+  const maxOrbR = orbitRadiusGalaxy(PLANETS[PLANETS.length - 1]); // Нептун
+  GALAXY_ZOOM = (base * 0.47) / (galSunR + maxOrbR);
+}
+
 function resize() {
   DPR = window.devicePixelRatio || 1;
   W = window.innerWidth;
@@ -133,7 +201,9 @@ function resize() {
   canvas.style.height = H + "px";
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   makeStars(W, H);
+  updateGalaxyScale();
 }
+
 window.addEventListener("resize", resize);
 resize();
 
@@ -157,6 +227,11 @@ function planetScreenRadius(planet) {
 
 /* ---------- Позиции планет ---------- */
 function planetPosition(planet) {
+  if (state.galaxyMode) {
+    /* Спираль: положение Солнца в галактике + орбитальный цикл вокруг него */
+    const w = planetAtTime(planet, state.simDays, scene);
+    return toScreen(w.x, w.y, scene);
+  }
   const cx = W / 2, cy = H / 2;
   const angle = (state.simDays / planet.periodDays) * Math.PI * 2 + planet.phase;
   const r = orbitRadius(planet);
@@ -170,10 +245,72 @@ function planetPosition(planet) {
 // стартовые фазы — планеты разбросаны по орбитам
 PLANETS.forEach((p, i) => { p.phase = (i * 2.399963) % (Math.PI * 2); }); // золотой угол
 
+/* =========================================================
+   РЕЖИМ «ГАЛАКТИКА»: Солнечная система движется вокруг
+   центра Галактики, планеты рисуют спираль (циклоиду).
+   ========================================================= */
+
+/* Параметры «сцены» для текущего кадра (пересчитываются каждый кадр) */
+let scene = null;
+function computeScene() {
+  if (!state.galaxyMode) {
+    scene = { cx: W / 2, cy: H / 2, scale: 1, camX: 0, camY: 0, sunAngle: 0, galaxyDays: 0 };
+    return scene;
+  }
+  const galaxyDays = state.simDays * state.swirl;          // «галактическое время»
+  const sunAngle = (galaxyDays / GALAXY_ORBIT_DAYS) * Math.PI * 2;
+  const R = galSunR;
+  const gx = Math.cos(sunAngle) * R;                       // Солнце в координатах галакт. центра
+  const gy = Math.sin(sunAngle) * R * 0.62;                // наклон плоскости Галактики
+  const zoom = GALAXY_ZOOM;                                // адаптивный масштаб камеры
+  scene = {
+    cx: W / 2 - gx * zoom,                                 // экранное положение Солнца
+    cy: H / 2 - gy * zoom,
+    scale: zoom,
+    camX: gx, camY: gy,
+    sunAngle, galaxyDays,
+  };
+  return scene;
+}
+
+/* Орбитальный радиус в режиме Галактики: сжатая лог-шкала,
+   чтобы спирали внешних планет не перекрывали весь экран. */
+function orbitRadiusGalaxy(planet) {
+  const maxR = Math.min(W, H) * 0.17;
+  const minR = Math.min(W, H) * 0.035;
+  const t = Math.log(planet.orbitAU / 0.30) / Math.log(30.05 / 0.30);
+  return minR + t * (maxR - minR);
+}
+
+/* Аналитическая позиция планеты в момент tDays (спираль/циклоида):
+   положение Солнца на галактической орбите в тот момент + орбитальный цикл вокруг него. */
+function planetAtTime(planet, tDays) {
+  const gDays = tDays * state.swirl;
+  const sa = (gDays / GALAXY_ORBIT_DAYS) * Math.PI * 2;
+  const solx = Math.cos(sa) * galSunR;
+  const soly = Math.sin(sa) * galSunR * 0.62;
+  const ang = (tDays / planet.periodDays) * Math.PI * 2 + planet.phase;
+  const r = orbitRadiusGalaxy(planet);
+  return {
+    x: solx + Math.cos(ang) * r,
+    y: soly + Math.sin(ang) * r * 0.62,
+  };
+}
+
+function toScreen(px, py, sc) {
+  return { x: sc.cx + px * sc.scale, y: sc.cy + py * sc.scale };
+}
+
 /* ---------- Отрисовка ---------- */
 function drawBackground(timeSec) {
   ctx.fillStyle = "#05060f";
   ctx.fillRect(0, 0, W, H);
+
+  if (state.galaxyMode) {
+    drawGalaxyBackdrop(timeSec);
+    return;
+  }
+
   for (const s of stars) {
     const alpha = s.a * (0.7 + 0.3 * Math.sin(s.tw + timeSec * s.twSpeed));
     ctx.globalAlpha = alpha;
@@ -185,10 +322,102 @@ function drawBackground(timeSec) {
   ctx.globalAlpha = 1;
 }
 
+/* Фон галактики: ядро, спиральные рукава, дальние звёзды.
+   Всё привязано к галактическому центру и движется вместе с камерой. */
+function drawGalaxyBackdrop(timeSec) {
+  const sc = scene;
+  // галактический центр на экране
+  const gc = toScreen(0, 0, sc);
+  const viewR = Math.hypot(W, H);
+
+  // спиральные пылевые рукава (мягкие облака)
+  for (const arm of dustLanes) {
+    for (const c of arm) {
+      const p = toScreen(c.x, c.y, sc);
+      if (p.x < -100 || p.x > W + 100 || p.y < -100 || p.y > H + 100) continue;
+      const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, c.r);
+      g.addColorStop(0, `hsla(${c.hue}, 60%, 60%, ${c.alpha})`);
+      g.addColorStop(1, "hsla(230, 60%, 50%, 0)");
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, c.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // ядро Галактики
+  const coreR = viewR * 0.16;
+  let g = ctx.createRadialGradient(gc.x, gc.y, 0, gc.x, gc.y, coreR);
+  g.addColorStop(0, "rgba(255, 236, 190, 0.55)");
+  g.addColorStop(0.35, "rgba(255, 200, 130, 0.22)");
+  g.addColorStop(1, "rgba(255, 180, 110, 0)");
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(gc.x, gc.y, coreR, 0, Math.PI * 2);
+  ctx.fill();
+
+  // дальние звёзды
+  ctx.fillStyle = "#ffffff";
+  for (const s of bgStars) {
+    const p = toScreen(s.x, s.y, sc);
+    if (p.x < 0 || p.x > W || p.y < 0 || p.y > H) continue;
+    const alpha = s.a * (0.7 + 0.3 * Math.sin(s.tw + timeSec * s.twSpeed));
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, s.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // орбита Солнца вокруг центра Галактики
+  ctx.save();
+  ctx.strokeStyle = "rgba(140, 190, 255, 0.3)";
+  ctx.lineWidth = 1.2;
+  ctx.setLineDash([6, 8]);
+  ctx.beginPath();
+  ctx.ellipse(gc.x, gc.y, galSunR * sc.scale, galSunR * 0.62 * sc.scale, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+
+  // маркер центра Галактики (стрелка, если за пределами экрана)
+  drawGalaxyCenterMarker(gc);
+}
+
+function drawGalaxyCenterMarker(gc) {
+  const m = 30;
+  const inside = gc.x > m && gc.x < W - m && gc.y > m && gc.y < H - m;
+  ctx.save();
+  ctx.font = "11px 'Segoe UI', sans-serif";
+  ctx.textAlign = "center";
+  if (inside) {
+    ctx.fillStyle = "rgba(255, 215, 150, 0.85)";
+    ctx.beginPath();
+    ctx.arc(gc.x, gc.y, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillText("⌾ Центр Галактики", gc.x, gc.y - 10);
+  } else {
+    // стрелка к центру на краю экрана
+    const cx = W / 2, cy = H / 2;
+    const a = Math.atan2(gc.y - cy, gc.x - cx);
+    const ex = cx + Math.cos(a) * (Math.min(W, H) / 2 - 46);
+    const ey = cy + Math.sin(a) * (Math.min(W, H) / 2 - 46);
+    ctx.translate(ex, ey);
+    ctx.rotate(a);
+    ctx.fillStyle = "rgba(255, 215, 150, 0.8)";
+    ctx.beginPath();
+    ctx.moveTo(10, 0); ctx.lineTo(-6, -7); ctx.lineTo(-6, 7);
+    ctx.closePath();
+    ctx.fill();
+    ctx.rotate(-a);
+    ctx.fillText("Центр Галактики", 0, 22);
+  }
+  ctx.restore();
+}
+
 function drawSun(timeSec) {
-  const cx = W / 2, cy = H / 2;
+  const cx = scene.cx, cy = scene.cy;
   const pulse = 1 + 0.03 * Math.sin(timeSec * 2);
-  const R = SUN.drawR * pulse;
+  const R = SUN.drawR * (state.galaxyMode ? 0.7 : 1) * pulse;
 
   // внешнее свечение
   let g = ctx.createRadialGradient(cx, cy, R * 0.2, cx, cy, R * 4.2);
@@ -219,6 +448,31 @@ function drawSun(timeSec) {
 }
 
 function drawOrbits() {
+  const sc = scene;
+  if (state.galaxyMode) {
+    /* В режиме Галактики вместо эллипсов — «живые» спиральные траектории */
+    if (!state.showTrails || !state.showOrbits) return;
+    ctx.save();
+    ctx.lineWidth = 1.2;
+    for (const p of PLANETS) {
+      ctx.strokeStyle = hexToRgba(p.color, 0.5);
+      ctx.beginPath();
+      let started = false;
+      // хвост спирали: последние GAL_TRIALS_MAX точек назад по времени
+      for (let i = GAL_TRIALS_MAX; i >= 0; i--) {
+        const tDays = sc ? state.simDays - i * GAL_TRIAL_STRIDE : 0;
+        if (tDays < 0) continue;
+        const w = planetAtTime(p, tDays, sc);
+        const s = toScreen(w.x, w.y, sc);
+        if (!started) { ctx.moveTo(s.x, s.y); started = true; }
+        else ctx.lineTo(s.x, s.y);
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
+    return;
+  }
+
   if (!state.showOrbits) return;
   const cx = W / 2, cy = H / 2;
   ctx.save();
@@ -234,13 +488,46 @@ function drawOrbits() {
   ctx.restore();
 }
 
+function hexToRgba(hex, alpha) {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+}
+
+/* Траектория-спираль выбранной планеты (яркая, с градиентом затухания) */
+function drawSelectedTrail(p) {
+  if (!state.galaxyMode || !state.showTrails) return;
+  const sc = scene;
+  ctx.save();
+  ctx.lineWidth = 2;
+  const STEPS = 160;
+  const span = GAL_TRIALS_MAX * GAL_TRIAL_STRIDE; // суммарный охват в сутках
+  for (let i = 0; i < STEPS; i++) {
+    const t0 = state.simDays - span * (1 - i / STEPS);
+    const t1 = state.simDays - span * (1 - (i + 1) / STEPS);
+    if (t1 < 0 || t0 < 0) continue;
+    const a = planetAtTime(p, Math.max(0, t0), sc);
+    const b = planetAtTime(p, Math.max(0, t1), sc);
+    const sa = toScreen(a.x, a.y, sc), sb = toScreen(b.x, b.y, sc);
+    ctx.strokeStyle = hexToRgba(p.color, 0.15 + 0.75 * (i / STEPS));
+    ctx.beginPath();
+    ctx.moveTo(sa.x, sa.y);
+    ctx.lineTo(sb.x, sb.y);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 function drawPlanet(p, timeSec) {
   const pos = planetPosition(p);
-  const R = planetScreenRadius(p);
+  let R = planetScreenRadius(p);
+  if (state.galaxyMode) R *= scene.scale;        // планеты масштабируются вместе со сценой
   p._screen = { x: pos.x, y: pos.y, r: R }; // для попаданий
 
   const isSel = state.selected === p;
   const isHov = state.hovered === p;
+
+  // яркая спиральная траектория выбранной планеты
+  if (isSel) drawSelectedTrail(p);
 
   // подсветка выбранной/наведённой
   if (isSel || isHov) {
@@ -258,7 +545,7 @@ function drawPlanet(p, timeSec) {
   if (p.hasRings) drawRings(p, pos, R, "back");
 
   // тень падения света (от Солнца)
-  const sunDir = Math.atan2(pos.y - H / 2, pos.x - W / 2);
+  const sunDir = Math.atan2(pos.y - scene.cy, pos.x - scene.cx);
   const gx = pos.x - Math.cos(sunDir) * R * 0.45;
   const gy = pos.y - Math.sin(sunDir) * R * 0.45;
   const g = ctx.createRadialGradient(gx, gy, R * 0.15, pos.x, pos.y, R * 1.15);
@@ -332,15 +619,31 @@ function frame(now) {
     state.simDays += dt * state.speed * (365.25 / EARTH_YEAR_SECONDS);
   }
 
+  computeScene();                        // камера/спирали для текущего кадра
   const timeSec = now / 1000;
   drawBackground(timeSec);
   drawOrbits();
   drawSun(timeSec);
   for (const p of PLANETS) drawPlanet(p, timeSec);
+  if (state.galaxyMode) drawGalaxyHud();
 
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
+
+/* HUD в режиме Галактики: счётчик витков и пройденного пути */
+function drawGalaxyHud() {
+  const sc = scene;
+  const turns = sc.galaxyDays / GALAXY_ORBIT_DAYS;
+  ctx.save();
+  ctx.font = "12px 'Segoe UI', sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillStyle = "rgba(150, 200, 255, 0.9)";
+  ctx.fillText(`🌌 Виток Солнца вокруг центра Галактики: ${turns.toFixed(2)}`, 20, H - 92);
+  ctx.fillStyle = "rgba(120, 160, 220, 0.75)";
+  ctx.fillText("Траектории планет — спирали: система движется, планеты вращаются", 20, H - 74);
+  ctx.restore();
+}
 
 /* ---------- Попадание курсора по планете ---------- */
 function pickPlanet(mx, my) {
@@ -465,6 +768,40 @@ document.getElementById("chkOrbits").addEventListener("change", (e) => state.sho
 document.getElementById("chkLabels").addEventListener("change", (e) => state.showLabels = e.target.checked);
 document.getElementById("chkScale").addEventListener("change", (e) => state.realScale = e.target.checked);
 
+/* ---------- Режим «Галактика»: переключение и управление вихрем ---------- */
+const btnMode       = document.getElementById("btnMode");
+const galaxyBlock   = document.getElementById("galaxyBlock");
+const swirlSlider   = document.getElementById("swirlSlider");
+const swirlLabel    = document.getElementById("swirlLabel");
+const chkTrails     = document.getElementById("chkTrails");
+const topHint       = document.querySelector(".topbar .hint");
+const footnote      = document.getElementById("footnote");
+
+function setGalaxyMode(on) {
+  state.galaxyMode = on;
+  btnMode.classList.toggle("active", on);
+  btnMode.textContent = on ? "☀️ Классика" : "🌌 Галактика";
+  galaxyBlock.classList.toggle("hidden", !on);
+  topHint.textContent = on
+    ? "Солнечная система летит вокруг центра Галактики — траектории планет закручиваются в спирали"
+    : "Нажмите на планету, чтобы узнать о ней больше";
+  footnote.innerHTML = on
+    ? "Режим «Галактика»: Солнце движется по галактической орбите, планеты — спираль (циклоида). " +
+      "Реальный галактический год ≈ 230 млн земных лет; для наглядности масштаб времени сжат."
+    : "Демонстрация: орбитальные периоды пропорциональны реальным (Земля = 365 сут ≈ 20 сек при скорости 1×). " +
+      "Расстояния и размеры условны для наглядности.";
+}
+
+btnMode.addEventListener("click", () => setGalaxyMode(!state.galaxyMode));
+
+function setSwirl(v) {
+  state.swirl = v;
+  swirlSlider.value = v;
+  swirlLabel.textContent = `${(+v.toFixed(1))}×`;
+}
+swirlSlider.addEventListener("input", () => setSwirl(parseFloat(swirlSlider.value)));
+chkTrails.addEventListener("change", (e) => state.showTrails = e.target.checked);
+
 /* Горячие клавиши */
 window.addEventListener("keydown", (e) => {
   if (e.code === "Space") {
@@ -473,6 +810,9 @@ window.addEventListener("keydown", (e) => {
     updatePlayButton();
   } else if (e.key === "Escape") {
     hideInfo();
+  } else if ((e.key === "g" || e.key === "G" || e.key === "п" || e.key === "П") &&
+             !e.ctrlKey && !e.metaKey && !e.altKey) {
+    setGalaxyMode(!state.galaxyMode);
   } else if (e.key === "+" || e.key === "=") {
     setSpeed(Math.min(10, +(state.speed + 0.5).toFixed(1)));
   } else if (e.key === "-") {
@@ -481,4 +821,5 @@ window.addEventListener("keydown", (e) => {
 });
 
 setSpeed(1);
+setSwirl(1);
 updatePlayButton();
