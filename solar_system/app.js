@@ -8,7 +8,7 @@
 
 /* Версия сборки — ТОЛЬКО номер, без описаний (по требованию).
    Видна в заголовке вкладки, в шапке страницы и в консоли. */
-const VERSION = "v2.6";
+const VERSION = "v2.7";
 document.title = `Солнечная система ${VERSION}`;
 console.log(`%c☀️ Солнечная система — сборка: ${VERSION}`, "color:#ffd75e;font-weight:bold");
 /* Бейдж версии в шапке страницы */
@@ -215,16 +215,21 @@ function cometVisPeriodDays(c) {
 
 function cometPosition(c) {
   const aPx = cometAPx(c);                       // экранная полуось (не за край экрана)
-  const bPx = aPx * Math.sqrt(1 - c.ecc * c.ecc);
+  const eVis = c.visEcc ?? c.ecc;                // модельный эксцентриситет: реальные 0.995+ дают «иголку» b=a√(1−e²) ≈ 1–3% от a, по которой тело пролетает сквозь Солнце
+  const bPx = aPx * Math.sqrt(1 - eVis * eVis);
   /* Движение кометы синхронизировано с модельным временем симуляции
      (state.simDays): при паузе комета останавливается, при «Сбросе» —
      возвращается на исходную точку. */
   const periodDays = cometVisPeriodDays(c);      // модельный период по ВИДИМОЙ орбите (медленный)
   const Mraw = circleAngle(state.simDays, periodDays, c.phase || 0);
-  const Ecc = keplerSolve(((Mraw + Math.PI) % (Math.PI * 2)) - Math.PI, c.ecc);
-  const rAU = c.aAU * (1 - c.ecc * Math.cos(Ecc));   // истинное расстояние до Солнца
+  const Ecc = keplerSolve(((Mraw + Math.PI) % (Math.PI * 2)) - Math.PI, eVis);
+  /* rAU — расстояние по МОДЕЛЬНОЙ орбите (сохраняет реальный перигелий
+     q = a·(1−e)), поэтому у Солнца комета максимально активна, а вдали —
+     тусклое ядро; раньше rAU считался по настоящему эллипсу (r до 709 а.е.),
+     из-за чего act≈0 и комета «исчезала/скакала» вблизи Солнца. */
+  const rAU = (aPx / auPx()) * (1 - eVis * Math.cos(Ecc));
   // координаты в плоскости орбиты (фокус — Солнце — в центре экрана)
-  const ox = Math.cos(Ecc) * aPx - aPx * c.ecc;      // ось к перигелию
+  const ox = Math.cos(Ecc) * aPx - aPx * eVis;   // ось к перигелию
   const oy = Math.sin(Ecc) * bPx;
   // поворот на долготу перигелия ω и «наклон» вида сверху вниз
   const w = (c.omegaDeg * Math.PI) / 180;
@@ -360,7 +365,7 @@ function drawSun(timeSec) {
    афелия может выходить за холст). */
 function cometAPx(c) {
   const maxR = Math.min(W, H) * 0.5 - 14;
-  return Math.min(scaleAUtoPx(c.aAU), maxR);
+  return Math.min(scaleAUtoPx(c.visA ?? c.aAU), maxR);
 }
 
 /* В v2.5 оставлены только ДВЕ МЕДЛЕННЫЕ длиннопериодические кометы
@@ -372,16 +377,25 @@ function cometAPx(c) {
    фоне медленно идущих внешних планет выглядели носителями. Исправлено
    индивидуальными коэффициентами slowFor: теперь обе кометы медленные
    (оборот ~10 мин при 1×), движение плавное на любой скорости. */
+/* Экранные полуоси комет (в а.е. условной шкалы). Настоящие a у этих
+   комет 170–360 а.е., но при эллипсе Кеплера b = a·√(1−e²) поперёк орбиты
+   составлял бы всего 1–3% от длины — «иголка», по которой комета носится
+   сквозь Солнце. Поэтому модельные орбиты сохраняют РЕАЛЬНЫЙ перигелий
+   q = a·(1−e), но имеют разумный эксцентриситет и вписываются в экран. */
+const COMET_VIS_A = { hb: 24, nw: 28 };
+
 const COMETS = [
   {
     name: "Комета Хейла-Боппа", nameEn: "C/1995 O1 Hale-Bopp",
-    aAU: 173, ecc: 0.995, periodYr: 7470, perihelionAU: 0.87, aphelionAU: 345, omegaDeg: 282, phase: 5.5, slowFor: 8,
+    aAU: 173, ecc: 0.995, periodYr: 7470, perihelionAU: 0.87, aphelionAU: 345,
+    visA: COMET_VIS_A.hb, visEcc: 0.95, omegaDeg: 282, phase: 5.5, slowFor: 8,
     color: "#d8f0ff", type: "Длиннопериодическая комета (облако Оорта)",
     desc: "Одна из самых наблюдаемых комет XX века (1997 г.): видна невооружённым глазом 18 месяцев, период ~7470 лет, ядро ~60–80 км.",
   },
   {
     name: "Комета NEOWISE", nameEn: "C/2020 F3 (NEOWISE)",
-    aAU: 355, ecc: 0.998, periodYr: 6800, perihelionAU: 0.69, aphelionAU: 709, omegaDeg: 61, phase: 5.9, slowFor: 12,
+    aAU: 355, ecc: 0.998, periodYr: 6800, perihelionAU: 0.69, aphelionAU: 709,
+    visA: COMET_VIS_A.nw, visEcc: 0.96, omegaDeg: 61, phase: 5.9, slowFor: 12,
     color: "#e6f4ff", type: "Длиннопериодическая комета",
     desc: "Яркая комета лета 2020 года — первая, видимая с Земли невооружённым глазом с 1997 года. Прошла 0.69 а.е. от Земли, период около 6800 лет.",
   },
@@ -395,14 +409,16 @@ function drawCometOrbits() {
   ctx.setLineDash([4, 6]);
   for (const c of COMETS) {
     const aPx = cometAPx(c);
+    const eVis = c.visEcc ?? c.ecc;
+    const bPx = aPx * Math.sqrt(1 - eVis * eVis);
     const w = (c.omegaDeg * Math.PI) / 180;
     ctx.save();
     ctx.translate(W / 2, H / 2);
     ctx.rotate(w);
     ctx.scale(1, TILT);
     ctx.beginPath();
-    // центр эллипса смещён от фокуса (Солнца) на c = a·e
-    ctx.arc(-aPx * c.ecc, 0, aPx, 0, Math.PI * 2);
+    // настоящий эллипс: центр смещён от фокуса (Солнца) на c = a·e
+    ctx.ellipse(-aPx * eVis, 0, aPx, bPx, 0, 0, Math.PI * 2);
     ctx.stroke();
     ctx.restore();
   }
