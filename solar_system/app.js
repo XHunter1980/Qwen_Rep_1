@@ -8,7 +8,7 @@
 
 /* Версия сборки — ТОЛЬКО номер, без описаний (по требованию).
    Видна в заголовке вкладки, в шапке страницы и в консоли. */
-const VERSION = "v3.0";
+const VERSION = "v3.1";
 document.title = `Солнечная система ${VERSION}`;
 console.log(`%c☀️ Солнечная система — сборка: ${VERSION}`, "color:#ffd75e;font-weight:bold");
 /* Бейдж версии в шапке страницы */
@@ -507,47 +507,72 @@ function drawComets(timeSec, layer) {
     const behind = isBehindSun(pos.rAU, pos.y);  // «за» Солнцем или «перед» ним (единый критерий глубины)
     if ((layer === "back") !== behind) continue;
 
-    const R = 2.6;                               // ядро (в масштабе не отображается)
-
-    // яркость и длина хвоста растут при приближении к Солнцу (активность комет)
-    const act = Math.max(0, Math.min(1, 3.2 / (pos.rAU + 0.6)));  // ~1 у Солнца, → 0 на окраине
-    if (act <= 0.03) {
-      ctx.fillStyle = hexToRgba(c.color, 0.5);                   // далеко — лишь тусклое ядро
+    /* ---- Реалистичная активность и размеры хвостов ----
+       Активность кометы физически растёт как ~1/r² (сублимация льдов),
+       а не линейно. Хвосты в реальности ОГРОМНЫ: ионный у Гейла-Боппы
+       достигал 3.7 млн км (~0.025 а.е.), пылевой — сопоставим.
+       Для наглядности задаём эталонную длину при r=1 а.е., но НЕ даём
+       хвосту перекрывать всю систему: ограничиваем его долей расстояния
+       кометы до Солнца (макс. ~0.45·r) — так сохраняется масштаб. */
+    const act = Math.pow(Math.min(1, 1.6 / (pos.rAU + 0.25)), 1.5); // ~1 у Солнца, быстро гаснет
+    if (act <= 0.02) {
+      ctx.fillStyle = hexToRgba(c.color, 0.5);                     // далеко — лишь тусклое ядро
       ctx.beginPath();
-      ctx.arc(pos.x, pos.y, R, 0, Math.PI * 2);
+      ctx.arc(pos.x, pos.y, 2.2, 0, Math.PI * 2);
       ctx.fill();
       continue;
     }
 
-    const tailLen = 40 + act * 190;
     const dirX = pos.x - cx, dirY = pos.y - cy;
-    const dl = Math.hypot(dirX, dirY) || 1;
-    const tx = pos.x + (dirX / dl) * tailLen;
-    const ty = pos.y + (dirY / dl) * tailLen;
+    const dlPx = Math.hypot(dirX, dirY) || 1;                     // расстояние до Солнца в px
+    /* Эталон: у Земли (1 а.е.) активная комета даёт хвост ~ 90 px;
+       дальше по орбите хвост растёт с act, но не длиннее 0.45·dlPx. */
+    const TAIL_REF_PX = 90;
+    const tailIon   = Math.min(TAIL_REF_PX * act * 1.6, dlPx * 0.45); // ионный — прямой и длинный
+    const tailDust  = Math.min(TAIL_REF_PX * act * 1.0, dlPx * 0.30); // пылевой — короче и шире
+    const ux = dirX / dlPx, uy = dirY / dlPx;                       // единичный вектор «от Солнца»
+    const ix = pos.x + ux * tailIon,  iy = pos.y + uy * tailIon;
+    const dxv = pos.x + ux * tailDust, dyv = pos.y + uy * tailDust;
 
-    // хвост направлен прочь от Солнца: ионный + пылевой
-    const grad = ctx.createLinearGradient(pos.x, pos.y, tx, ty);
-    grad.addColorStop(0, hexToRgba(c.color, 0.85 * act));
-    grad.addColorStop(0.35, hexToRgba("#9fc8ff", 0.35 * act));
-    grad.addColorStop(1, "rgba(160, 200, 255, 0)");
     ctx.save();
-    ctx.strokeStyle = grad;
+    ctx.globalCompositeOperation = "lighter";                      // свечение складывается аддитивно
+
+    // ПЫЛЕВОЙ хвост: широкий, жёлто-белый, слегка изогнут (отстаёт от движения)
+    const dg = ctx.createLinearGradient(pos.x, pos.y, dxv, dyv);
+    dg.addColorStop(0, `rgba(255, 236, 190, ${0.55 * act})`);
+    dg.addColorStop(0.5, `rgba(255, 220, 160, ${0.22 * act})`);
+    dg.addColorStop(1, "rgba(255, 210, 150, 0)");
+    ctx.fillStyle = dg;
+    ctx.beginPath();
+    ctx.moveTo(pos.x - uy * 3, pos.y + ux * 3);
+    ctx.quadraticCurveTo(
+      pos.x + ux * tailDust * 0.55 - uy * tailDust * 0.22,
+      pos.y + uy * tailDust * 0.55 + ux * tailDust * 0.22,
+      dxv - uy * tailDust * 0.18, dyv + ux * tailDust * 0.18);
+    ctx.lineTo(dxv + uy * tailDust * 0.18, dyv - ux * tailDust * 0.18);
+    ctx.quadraticCurveTo(
+      pos.x + ux * tailDust * 0.55 + uy * tailDust * 0.10,
+      pos.y + uy * tailDust * 0.55 - ux * tailDust * 0.10,
+      pos.x + uy * 3, pos.y - ux * 3);
+    ctx.closePath();
+    ctx.fill();
+
+    // ИОННЫЙ хвост: тонкий, голубой, строго от Солнца (солнечный ветер)
+    const ig = ctx.createLinearGradient(pos.x, pos.y, ix, iy);
+    ig.addColorStop(0, `rgba(150, 200, 255, ${0.8 * act})`);
+    ig.addColorStop(0.4, `rgba(120, 170, 255, ${0.35 * act})`);
+    ig.addColorStop(1, "rgba(100, 150, 255, 0)");
+    ctx.strokeStyle = ig;
     ctx.lineCap = "round";
-    ctx.lineWidth = 3 + act * 10;
-    ctx.beginPath();
-    ctx.moveTo(pos.x, pos.y);
-    ctx.lineTo(tx, ty);
-    ctx.stroke();
     ctx.lineWidth = 1.5 + act * 4;
-    ctx.globalAlpha = 0.6;
     ctx.beginPath();
     ctx.moveTo(pos.x, pos.y);
-    ctx.lineTo(tx + (dirY / dl) * tailLen * 0.12, ty - (dirX / dl) * tailLen * 0.12);
+    ctx.lineTo(ix, iy);
     ctx.stroke();
     ctx.restore();
 
-    // кома — светящееся облако газа вокруг ядра
-    const comaR = 4 + act * 14;
+    // КОМА — светящееся облако газа вокруг ядра (радиус растёт с активностью)
+    const comaR = 2.5 + act * 9;
     const coma = ctx.createRadialGradient(pos.x, pos.y, 0.5, pos.x, pos.y, comaR);
     coma.addColorStop(0, `rgba(255,255,255,${0.9 * act})`);
     coma.addColorStop(0.4, hexToRgba(c.color, 0.5 * act));
@@ -557,10 +582,10 @@ function drawComets(timeSec, layer) {
     ctx.arc(pos.x, pos.y, comaR, 0, Math.PI * 2);
     ctx.fill();
 
-    // ядро
+    // ЯДРО — крошечное (реально 5–15 км, в любом масштабе — точка)
     ctx.fillStyle = "#eef6ff";
     ctx.beginPath();
-    ctx.arc(pos.x, pos.y, R, 0, Math.PI * 2);
+    ctx.arc(pos.x, pos.y, 2.2, 0, Math.PI * 2);
     ctx.fill();
 
     // подсветка выбора/наведения
@@ -1042,6 +1067,182 @@ function drawRings(p, pos, R, part) {
   ctx.restore();
 }
 
+/* ============================================================
+   ИНОПЛАНЕТЯНЕ — случайные визиты НЛО в Солнечную систему.
+   Визит происходит не по расписанию: каждый кадр есть небольшая
+   вероятность появления гостя (средний интервал ~25–60 с реального
+   времени при скорости 1×). Корабль входит по гиперболической
+   траектории из-за края экрана, делает облё́т вокруг Солнца
+   (гравитационный манёвр — по дуге) и улетает прочь. Во время
+   визита показывается уведомление; корабль кликабелен — карточка
+   «контакта». Экстренно вызвать/скрыть: клавиша U или чекбокс.
+   ============================================================ */
+const ALIEN_NAMES = [
+  { race: "Зета-Ретикульцы", ship: "Разведчик «Искра»",        color: "#7dffb2" },
+  { race: "Gliese 667C",     ship: "Крейсер «Туманность»",     color: "#b48cff" },
+  { race: "Кеплер-442b",     ship: "Посол «Аврора»",           color: "#ffd75e" },
+  { race: "TRAPPIST-1e",     ship: "Сонда «Мерцание»",         color: "#7dd8ff" },
+  { race: "Проксима Центавра b", ship: "Штурмовик «Тень»",     color: "#ff9d7a" },
+];
+const alienState = {
+  enabled: true,          // общий выключатель слоя
+  active: null,           // текущий визит или null
+  nextCheckAt: 0,         // модельное время следующей проверки спавна
+  spawnChancePerSec: 0.03,// вероятность появления за секунду реального времени (~раз в 33 с)
+};
+
+function startAlienVisit(nowSec) {
+  const info = ALIEN_NAMES[Math.floor(Math.random() * ALIEN_NAMES.length)];
+  /* Точка входа — случайный угол за краем экрана. */
+  const angle = Math.random() * Math.PI * 2;
+  const R0 = Math.hypot(W, H) / 2 + 80;               // старт за видимой границей
+  /* Дуга облёта: пролетаем на расстоянии rFlyby от Солнца. */
+  const rFlybyPx = 60 + Math.random() * 120;
+  /* Скорость облёта px/сек (реального времени): умеренная, заметная. */
+  const speed = 140 + Math.random() * 120;
+  /* Направление вращения вокруг Солнца: по или против часовой. */
+  const dir = Math.random() < 0.5 ? 1 : -1;
+  /* Полный угол облёта: сколько радиан «огибаем» Солнце. */
+  const sweep = Math.PI * (0.9 + Math.random() * 1.4); // 0.9π..2.3π
+  alienState.active = {
+    ...info,
+    t0: nowSec,            // старт (сек реального времени)
+    angle, R0, rFlybyPx, speed, dir, sweep,
+    entryLen: R0 - rFlybyPx, // путь по прямой до начала дуги
+    exitExtra: 0,
+    totalDur: ((R0 - rFlybyPx) + rFlybyPx * sweep + (R0 - rFlybyPx)) / speed,
+    _screen: null,
+    warpPhase: 0,          // фаза мерцания/следа
+  };
+  showAlienToast(info);
+}
+
+/* Позиция корабля по прогрессу визита (прямое вхождение → дуга → уход). */
+function alienPosition(a, nowSec) {
+  const cx = W / 2, cy = H / 2;
+  const s = (nowSec - a.t0) * a.speed;   // пройденный путь, px
+  if (s <= 0 || s >= a.totalDur * a.speed) return null; // до старта / после конца
+  let x, y;
+  if (s < a.entryLen) {
+    // входим по прямой к точке касания орбиты облёта
+    const k = s / a.entryLen;
+    const tx = cx + Math.cos(a.angle) * a.rFlybyPx;
+    const ty = cy + Math.sin(a.angle) * a.rFlybyPx;
+    const sx = cx + Math.cos(a.angle) * a.R0;
+    const sy = cy + Math.sin(a.angle) * a.R0;
+    x = sx + (tx - sx) * k; y = sy + (ty - sy) * k;
+  } else if (s < a.entryLen + a.rFlybyPx * a.sweep) {
+    // облёт Солнца по дуге радиуса rFlybyPx
+    const arc = (s - a.entryLen) / a.rFlybyPx;   // radians travelled
+    const ang = a.angle + a.dir * arc;
+    x = cx + Math.cos(ang) * a.rFlybyPx;
+    y = cy + Math.sin(ang) * a.rFlybyPx;
+    a._lastAng = ang;
+  } else {
+    // уход по касательной от точки окончания дуги
+    const out = s - a.entryLen - a.rFlybyPx * a.sweep;
+    const ang = a.angle + a.dir * a.sweep;
+    const tanX = -Math.sin(ang) * a.dir, tanY = Math.cos(ang) * a.dir;
+    x = cx + Math.cos(ang) * a.rFlybyPx + tanX * out;
+    y = cy + Math.sin(ang) * a.rFlybyPx + tanY * out;
+  }
+  return { x, y };
+}
+
+function drawAlien(nowSec) {
+  const a = alienState.active;
+  if (!a) return;
+  const pos = alienPosition(a, nowSec);
+  if (!pos) { alienState.active = null; return; }   // визит завершён
+  a._screen = { x: pos.x, y: pos.y, r: 14 };
+
+  const heading = Math.atan2(pos.y - H / 2, pos.x - W / 2) + Math.PI / 2;
+  ctx.save();
+  ctx.translate(pos.x, pos.y);
+  ctx.rotate(heading);
+
+  // след варп-двигателя
+  a.warpPhase += 0.35;
+  ctx.globalAlpha = 0.5 + 0.3 * Math.sin(a.warpPhase);
+  const trail = ctx.createLinearGradient(0, 10, 0, 46);
+  trail.addColorStop(0, hexToRgba(a.color, 0.7));
+  trail.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = trail;
+  ctx.beginPath();
+  ctx.moveTo(-5, 10); ctx.lineTo(5, 10); ctx.lineTo(2, 46); ctx.lineTo(-2, 46);
+  ctx.closePath(); ctx.fill();
+  ctx.globalAlpha = 1;
+
+  // корпус летающей тарелки: купол + диск + огни
+  ctx.fillStyle = shadeDown(a.color);
+  ctx.beginPath(); ctx.ellipse(0, -4, 10, 7, 0, Math.PI, 0); ctx.fill(); // купол
+  const disc = ctx.createLinearGradient(-22, 0, 22, 0);
+  disc.addColorStop(0, "#556070"); disc.addColorStop(0.5, "#c8d2e0"); disc.addColorStop(1, "#556070");
+  ctx.fillStyle = disc;
+  ctx.beginPath(); ctx.ellipse(0, 0, 22, 8, 0, 0, Math.PI * 2); ctx.fill(); // диск
+  for (let i = 0; i < 5; i++) {
+    const lx = -16 + i * 8;
+    ctx.fillStyle = hexToRgba(a.color, 0.55 + 0.45 * Math.sin(a.warpPhase + i));
+    ctx.beginPath(); ctx.arc(lx, 3, 1.8, 0, Math.PI * 2); ctx.fill();       // мигающие огни
+  }
+  ctx.restore();
+
+  // подпись расы рядом с кораблём
+  if (state.showLabels) {
+    ctx.fillStyle = hexToRgba(a.color, 0.9);
+    ctx.font = "11px 'Segoe UI', sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(`👽 ${a.race}`, pos.x, pos.y - 26);
+  }
+
+  // подсветка при наведении/выборе
+  const isSel = state.selected === a, isHov = state.hovered === a;
+  if (isSel || isHov) {
+    ctx.strokeStyle = isSel ? "rgba(255,215,106,0.9)" : hexToRgba(a.color, 0.6);
+    ctx.lineWidth = 2; ctx.setLineDash(isSel ? [] : [3, 4]);
+    ctx.beginPath(); ctx.arc(pos.x, pos.y, 26, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+}
+
+/* Уведомление о прибытии гостей (внизу по центру, автоисчезает). */
+const alienToast = document.getElementById("alienToast");
+let toastTimer = null;
+function showAlienToast(info) {
+  if (!alienToast) return;
+  alienToast.innerHTML = `🛸 Неопознанный объект! <b>${info.ship}</b> (${info.race}) вошёл в систему`;
+  alienToast.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => alienToast.classList.remove("show"), 5200);
+}
+
+/* Проверка спавна визита — в каждом кадре, с пуассоновской вероятностью. */
+function maybeSpawnAlien(dtSec, nowSec) {
+  if (!alienState.enabled || !state.playing) return;
+  if (alienState.active) return;                       // гость ещё в системе
+  if (Math.random() < alienState.spawnChancePerSec * dtSec) startAlienVisit(nowSec);
+}
+
+function pickAlien(mx, my) {
+  const a = alienState.active;
+  if (!a || !a._screen) return null;
+  return Math.hypot(mx - a._screen.x, my - a._screen.y) <= 26 ? a : null;
+}
+
+function showAlienInfo(a) {
+  state.selected = a;
+  infoIcon.style.background = `radial-gradient(circle at 32% 30%, #ffffff, ${a.color} 45%, #101a30)`;
+  infoName.textContent = `${a.ship}`;
+  infoSize.textContent = "≈ 22 м (диаметр диска)";
+  infoDist.textContent = "внекаталогный объект — траектория облёта Солнца";
+  infoPeriod.textContent = "гиперболический пролёт (не периодическая орбита)";
+  infoMoons.textContent = "—";
+  infoType.textContent = `Разведчик цивилизации ${a.race}`;
+  infoDesc.textContent = "Случайный межзвёздный гость. Визиты нерегулярны: следующий может " +
+    "случайно начаться в любой момент. Клавиша U — включить/выключить слой пришельцев.";
+  infoPanel.classList.remove("hidden");
+}
+
 /* ---------- Главный цикл ---------- */
 let lastT = performance.now();
 function frame(now) {
@@ -1054,6 +1255,7 @@ function frame(now) {
   }
 
   const timeSec = now / 1000;
+  maybeSpawnAlien(dt, timeSec);          // случайные визиты инопланетян
   drawBackground(timeSec);
   drawOrbits();                          // орбиты планет: эллипсы Кеплера или упрощённые круги
   drawCometOrbits();                     // эллиптические орбиты комет (пунктир)
@@ -1061,11 +1263,14 @@ function frame(now) {
   drawBelt(timeSec, "back");             // дальняя половина пояса астероидов
   for (const p of PLANETS) drawPlanet(p, timeSec, "back");
   drawComets(timeSec, "back");           // кометы за Солнцем
+  const alienPosNow = alienState.active ? alienPosition(alienState.active, timeSec) : null;
+  if (alienPosNow && alienPosNow.y < H / 2) drawAlien(timeSec);  // НЛО за Солнцем
   drawSun(timeSec);                      // Солнце поверх дальних тел
   /* Ближний слой: тела «перед» Солнцем */
   for (const p of PLANETS) drawPlanet(p, timeSec, "front");
   drawBelt(timeSec, "front");            // ближняя половина пояса
   drawComets(timeSec, "front");          // кометы перед Солнцем: ядро + кома + хвост
+  if (alienPosNow && alienPosNow.y >= H / 2) drawAlien(timeSec); // НЛО перед Солнцем
 
   requestAnimationFrame(frame);
 }
@@ -1123,6 +1328,8 @@ function pickAsteroid(mx, my) {
 }
 
 function pickAny(mx, my) {
+  const al = alienState.enabled ? pickAlien(mx, my) : null;
+  if (al) return { alien: al };
   const pm = pickMoon(mx, my);
   if (pm) return { planet: pm.planet, moon: pm.moon };
   const p = pickPlanet(mx, my);
@@ -1221,10 +1428,12 @@ const tooltip = document.getElementById("tooltip");
 
 canvas.addEventListener("mousemove", (e) => {
   const hit = pickAny(e.clientX, e.clientY);
-  state.hovered = hit ? (hit.comet || hit.asteroid || hit.planet) : null;
+  state.hovered = hit ? (hit.alien || hit.comet || hit.asteroid || hit.planet) : null;
   canvas.classList.toggle("hovering", !!hit);
   if (hit) {
-    tooltip.textContent = hit.comet
+    tooltip.textContent = hit.alien
+      ? `🛸 ${hit.alien.ship} — незваный гость (нажмите для подробностей)`
+      : hit.comet
       ? `${hit.comet.name} — комета (нажмите для подробностей)`
       : hit.asteroid
       ? `${hit.asteroid.name} — астероид главного пояса (нажмите для подробностей)`
@@ -1246,7 +1455,8 @@ canvas.addEventListener("mouseleave", () => {
 
 canvas.addEventListener("click", (e) => {
   const hit = pickAny(e.clientX, e.clientY);
-  if (hit && hit.comet) showInfo(null, null, null, hit.comet);
+  if (hit && hit.alien) showAlienInfo(hit.alien);
+  else if (hit && hit.comet) showInfo(null, null, null, hit.comet);
   else if (hit && hit.asteroid) showInfo(null, null, hit.asteroid);
   else if (hit) showInfo(hit.planet, hit.moon);
   else hideInfo();
@@ -1256,7 +1466,8 @@ canvas.addEventListener("click", (e) => {
 canvas.addEventListener("touchstart", (e) => {
   const t = e.touches[0];
   const hit = pickAny(t.clientX, t.clientY);
-  if (hit && hit.comet) { showInfo(null, null, null, hit.comet); e.preventDefault(); }
+  if (hit && hit.alien) { showAlienInfo(hit.alien); e.preventDefault(); }
+  else if (hit && hit.comet) { showInfo(null, null, null, hit.comet); e.preventDefault(); }
   else if (hit && hit.asteroid) { showInfo(null, null, hit.asteroid); e.preventDefault(); }
   else if (hit) { showInfo(hit.planet, hit.moon); e.preventDefault(); }
 }, { passive: true });
@@ -1327,6 +1538,21 @@ document.getElementById("chkComets").addEventListener("change", (e) => {
   state.showComets = e.target.checked;
   if (!state.showComets && state.selected && state.selected.aAU) hideInfo();  // скрыть карточку кометы
 });
+document.getElementById("chkAliens").addEventListener("change", (e) => {
+  alienState.enabled = e.target.checked;
+  if (!alienState.enabled) {
+    alienState.active = null;                                  // прогнать гостя
+    if (state.selected && state.selected.ship) hideInfo();
+  }
+});
+/* Кнопка «позвать гостя» — для демонстрации без ожидания случайного спавна */
+document.getElementById("btnAlienCall").addEventListener("click", () => {
+  if (!alienState.enabled) {
+    alienState.enabled = true;
+    document.getElementById("chkAliens").checked = true;
+  }
+  if (!alienState.active) startAlienVisit(performance.now() / 1000);
+});
 
 /* Сноска: только номер версии сборки — без описаний и подробностей
    (требование пользователя: «пусть отображается только версия приложения»).
@@ -1361,6 +1587,15 @@ window.addEventListener("keydown", (e) => {
   } else if ((e.key === "o" || e.key === "O" || e.key === "щ" || e.key === "Щ") &&
              !e.ctrlKey && !e.metaKey && !e.altKey) {
     toggleOrbitMode();   // переключение эллипсы Кеплера ↔ упрощённые круги
+  } else if ((e.key === "u" || e.key === "U" || e.key === "г" || e.key === "Г") &&
+             !e.ctrlKey && !e.metaKey && !e.altKey) {
+    alienState.enabled = !alienState.enabled;
+    const chk = document.getElementById("chkAliens");
+    chk.checked = alienState.enabled;
+    if (!alienState.enabled) {
+      alienState.active = null;
+      if (state.selected && state.selected.ship) hideInfo();
+    }
   } else if (e.key === "+" || e.key === "=") {
     setSpeed(Math.min(10, +(state.speed + 0.5).toFixed(1)));
   } else if (e.key === "-") {
