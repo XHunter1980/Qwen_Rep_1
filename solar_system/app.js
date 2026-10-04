@@ -6,6 +6,17 @@
    с фактами, управление: воспроизведение/пауза, скорость.
    ========================================================= */
 
+/* Версия сборки — видна в заголовке страницы, в шапке и в консоли,
+   чтобы по открытой страничке сразу было понятно, какая сборка запущена. */
+const VERSION = "v1.3 (Галактика + Луны)";
+document.title = `Солнечная система ${VERSION}`;
+console.log(`%c☀️ Солнечная система — сборка: ${VERSION}`, "color:#ffd75e;font-weight:bold");
+/* Бейдж версии в шапке страницы */
+{
+  const badge = document.getElementById("versionBadge");
+  if (badge) badge.textContent = VERSION;
+}
+
 const canvas = document.getElementById("space");
 const ctx = canvas.getContext("2d");
 
