@@ -8,7 +8,7 @@
 
 /* Версия сборки — ТОЛЬКО номер, без описаний (по требованию).
    Видна в заголовке вкладки, в шапке страницы и в консоли. */
-const VERSION = "v3.2";
+const VERSION = "v3.3";
 document.title = `Солнечная система ${VERSION}`;
 console.log(`%c☀️ Солнечная система — сборка: ${VERSION}`, "color:#ffd75e;font-weight:bold");
 /* Бейдж версии в шапке страницы */
@@ -175,17 +175,41 @@ function bodyRealPx(diameterKm) {
    Используется планетами (через scaleAUtoPx), лунами и поясом. */
 const REAL_ORBIT_STRETCH = 3;
 
-/* Позиция луны вокруг планеты (масштаб лунных орбит увеличен условно;
-   в режиме реальных размеров — растяжение по общему правилу REAL_ORBIT_STRETCH) */
+/* Позиция луны вокруг планеты. Орбиты спутников реалистичнее:
+   1) радиус пропорционален РЕАЛЬНОму расстоянию до спутника
+      (distKm → логарифмический масштаб MOON_LOG_UNIT_PX), поэтому
+      порядок и относительные дистанции соблюдены: Фобос (9 376 км)
+      сидит вплотную к Марсу, Каллисто (1.88 млн км) далеко от Юпитера,
+      Луна — примерно на трёх земных диаметрах;
+   2) эллипс проекции: видимый «наклон» орбиты задаётся реальным
+      наклонением спутника (moon.incl, град) — у Тритона ретроградная
+      сильно наклонённая орбита, у галилеевых спутников почти лежат
+      в плоскости экватора;
+   3) минимальный зазор от поверхности планеты, чтобы луна не рисовалась
+      внутри диска планеты. */
+const MOON_LOG_UNIT_PX = 4.2;               // px на ln(dist/10 000 км)
+function moonOrbitPx(distKm) {
+  return Math.max(7, Math.log(Math.max(distKm, 1) / 10000) * MOON_LOG_UNIT_PX);
+}
 function moonPosition(planet, moon, pos, R) {
   const ang = circleAngle(state.simDays, moon.periodDays, moon.phase0 || 0);
-  const stretch = state.realScale ? REAL_ORBIT_STRETCH : 1;
-  const orbR = (moon.drawOrbR + R * 0.5) * stretch;
+  let orbR = moonOrbitPx(moon.distKm);
+  if (!state.realScale) orbR = Math.max(orbR, R + moon.drawOrbR * 0.45);
+  else orbR = Math.max(orbR, R + 4);
+  /* Проекция наклонённой орбиты: сжатие вертикали cos(i), ориентация
+     линии узлов случайна, но постоянна для каждой луны (seed из distKm). */
+  const node = ((moon.distKm % 97) / 97) * Math.PI;      // стабильный seed
+  /* Наклонение >90° (ретроградные луны, как Тритон i=157°) — то же самое
+     «видимое сжатие», что и 180−i, но орбита обходится в обратную сторону
+     (знак periodDays уже это делает). Поэтому берём min(i, 180−i). */
+  const inclEff = Math.min(moon.incl || 0, 180 - (moon.incl || 0));
+  const squash = Math.max(0.12, Math.cos(inclEff * Math.PI / 180));
+  const ex = Math.cos(ang) * orbR, ey = Math.sin(ang) * orbR * squash;
   return {
-    x: pos.x + Math.cos(ang) * orbR,
-    y: pos.y + Math.sin(ang) * orbR * 0.62,
+    x: pos.x + ex * Math.cos(node) - ey * Math.sin(node),
+    y: pos.y + ex * Math.sin(node) + ey * Math.cos(node),
     r: Math.max(1.4, bodyRealPx(Math.round(moon.relR * 12742))),
-    orbR,
+    orbR, squash, node,
   };
 }
 
@@ -658,7 +682,7 @@ const PLANETS = [
     moons: 1, type: "Каменистая планета",
     desc: "Единственная известная планета с жизнью. 71 % поверхности покрыт водой, атмосферу защищает магнитное поле.",
     majorMoons: [
-      { name: "Луна", nameEn: "Moon", periodDays: 27.3, distKm: 384400, relR: 0.273, drawOrbR: 19, color: "#cfcfcf" },
+      { name: "Луна", nameEn: "Moon", periodDays: 27.3, distKm: 384400, relR: 0.273, drawOrbR: 19, color: "#cfcfcf", incl: 5.1 },
     ],
   },
   {
@@ -670,8 +694,8 @@ const PLANETS = [
     moons: 2, type: "Каменистая планета",
     desc: "«Красная планета» — оксид железа в грунте. Здесь находится самый большой вулкан Солнечной системы — Олимп (≈ 22 км).",
     majorMoons: [
-      { name: "Фобос", nameEn: "Phobos", periodDays: 0.319, distKm: 9376, relR: 0.0016, drawOrbR: 12, color: "#a89a8c" },
-      { name: "Деймос", nameEn: "Deimos", periodDays: 1.263, distKm: 23463, relR: 0.0009, drawOrbR: 18, color: "#bdb0a2" },
+      { name: "Фобос", nameEn: "Phobos", periodDays: 0.319, distKm: 9376, relR: 0.0016, drawOrbR: 12, color: "#a89a8c", incl: 1.1 },
+      { name: "Деймос", nameEn: "Deimos", periodDays: 1.263, distKm: 23463, relR: 0.0009, drawOrbR: 18, color: "#bdb0a2", incl: 1.8 },
     ],
   },
   {
@@ -683,10 +707,10 @@ const PLANETS = [
     moons: 95, type: "Газовый гигант",
     desc: "Крупнейшая планета: в неё поместились бы 1300 Земель. Большое красное пятно — шторм больше Земли, бушующий столетиями.",
     majorMoons: [
-      { name: "Ио", nameEn: "Io", periodDays: 1.769, distKm: 421700, relR: 0.286, drawOrbR: 28, color: "#e8d174" },
-      { name: "Европа", nameEn: "Europa", periodDays: 3.551, distKm: 671034, relR: 0.245, drawOrbR: 35, color: "#d9cbb2" },
-      { name: "Ганимед", nameEn: "Ganymede", periodDays: 7.155, distKm: 1070412, relR: 0.413, drawOrbR: 44, color: "#b8a894" },
-      { name: "Каллисто", nameEn: "Callisto", periodDays: 16.689, distKm: 1882709, relR: 0.378, drawOrbR: 55, color: "#9d9184" },
+      { name: "Ио", nameEn: "Io", periodDays: 1.769, distKm: 421700, relR: 0.286, drawOrbR: 28, color: "#e8d174", incl: 0.05 },
+      { name: "Европа", nameEn: "Europa", periodDays: 3.551, distKm: 671034, relR: 0.245, drawOrbR: 35, color: "#d9cbb2", incl: 0.47 },
+      { name: "Ганимед", nameEn: "Ganymede", periodDays: 7.155, distKm: 1070412, relR: 0.413, drawOrbR: 44, color: "#b8a894", incl: 0.2 },
+      { name: "Каллисто", nameEn: "Callisto", periodDays: 16.689, distKm: 1882709, relR: 0.378, drawOrbR: 55, color: "#9d9184", incl: 0.28 },
     ],
   },
   {
@@ -698,9 +722,9 @@ const PLANETS = [
     moons: 146, type: "Газовый гигант",
     desc: "Знаменит кольцами из льда и камней шириной ~280 000 км и толщиной всего десятки метров. Планета легче воды.",
     majorMoons: [
-      { name: "Титан", nameEn: "Titan", periodDays: 15.945, distKm: 1221870, relR: 0.404, drawOrbR: 46, color: "#e0b463" },
-      { name: "Рея", nameEn: "Rhea", periodDays: 4.518, distKm: 527108, relR: 0.124, drawOrbR: 34, color: "#cfc9c0" },
-      { name: "Япет", nameEn: "Iapetus", periodDays: 79.33, distKm: 3560820, relR: 0.098, drawOrbR: 62, color: "#b6ab9c" },
+      { name: "Титан", nameEn: "Titan", periodDays: 15.945, distKm: 1221870, relR: 0.404, drawOrbR: 46, color: "#e0b463", incl: 0.33 },
+      { name: "Рея", nameEn: "Rhea", periodDays: 4.518, distKm: 527108, relR: 0.124, drawOrbR: 34, color: "#cfc9c0", incl: 0.35 },
+      { name: "Япет", nameEn: "Iapetus", periodDays: 79.33, distKm: 3560820, relR: 0.098, drawOrbR: 62, color: "#b6ab9c", incl: 15.5 },
     ],
   },
   {
@@ -712,8 +736,8 @@ const PLANETS = [
     moons: 28, type: "Ледяной гигант",
     desc: "Вращается «лёжа на боку» — ось наклонена на 98°. Метан в атмосфере придаёт ему голубовато-зелёный цвет.",
     majorMoons: [
-      { name: "Титания", nameEn: "Titania", periodDays: 8.706, distKm: 435910, relR: 0.124, drawOrbR: 26, color: "#c5ccd2" },
-      { name: "Оберон", nameEn: "Oberon", periodDays: 13.463, distKm: 583520, relR: 0.119, drawOrbR: 34, color: "#b3bcc4" },
+      { name: "Титания", nameEn: "Titania", periodDays: 8.706, distKm: 435910, relR: 0.124, drawOrbR: 26, color: "#c5ccd2", incl: 0.34 },
+      { name: "Оберон", nameEn: "Oberon", periodDays: 13.463, distKm: 583520, relR: 0.119, drawOrbR: 34, color: "#b3bcc4", incl: 0.06 },
     ],
   },
   {
@@ -725,7 +749,7 @@ const PLANETS = [
     moons: 16, type: "Ледяной гигант",
     desc: "Самая далёкая планета. Ветры достигают 2100 км/ч — быстрейшие в Солнечной системе. Обнаружен «на кончике пера» (1846 г.).",
     majorMoons: [
-      { name: "Тритон", nameEn: "Triton", periodDays: -5.877, distKm: 354759, relR: 0.212, drawOrbR: 28, color: "#cdd8e8" },
+      { name: "Тритон", nameEn: "Triton", periodDays: -5.877, distKm: 354759, relR: 0.212, drawOrbR: 28, color: "#cdd8e8", incl: 157 },
     ],
   },
 ];
@@ -1020,7 +1044,7 @@ function drawMoon(planet, moon, pos, R, highlight) {
   ctx.lineWidth = 1;
   ctx.setLineDash([3, 4]);
   ctx.beginPath();
-  ctx.ellipse(pos.x, pos.y, mp.orbR, mp.orbR * 0.62, 0, 0, Math.PI * 2);
+  ctx.ellipse(pos.x, pos.y, mp.orbR, mp.orbR * mp.squash, mp.node, 0, Math.PI * 2);
   ctx.stroke();
   ctx.restore();
 
@@ -1088,11 +1112,20 @@ const ALIEN_NAMES = [
 const alienState = {
   enabled: true,          // общий выключатель слоя
   active: null,           // текущий визит или null
-  nextCheckAt: 0,         // модельное время следующей проверки спавна
-  spawnChancePerSec: 0.03,// вероятность появления за секунду реального времени (~раз в 33 с)
+  lastSpawnReal: -1e9,    // реальное время последнего успешного спавна
+  minGapSec: 22,          // минимальная пауза между визитами (реальные сек)
+  spawnChancePerSec: 0.06,// базовая вероятность появления за секунду реального времени
 };
 
-function startAlienVisit(nowSec) {
+/* Запуск визита. Возвращает true/false — важно для кнопки «Позвать гостя»:
+   раньше вызов «не срабатывал», потому что активный визит уже существовал
+   и новый молча отменялся, а после завершения визита поле active могло
+   оставаться занятым (см. cleanup в drawAlien). Теперь состояние всегда
+   очищается, а повторный вызов форсирует смену гостя. */
+function startAlienVisit(nowSec, force = false) {
+  if (alienState.active && !force) return false;
+  /* Если гость ещё в системе и force=true — прошлый визит просто
+     завершается досрочно (корабль уходит со сцены немедленно). */
   const info = ALIEN_NAMES[Math.floor(Math.random() * ALIEN_NAMES.length)];
   /* Точка входа — случайный угол за краем экрана. */
   const angle = Math.random() * Math.PI * 2;
@@ -1115,7 +1148,9 @@ function startAlienVisit(nowSec) {
     _screen: null,
     warpPhase: 0,          // фаза мерцания/следа
   };
+  alienState.lastSpawnReal = nowSec;
   showAlienToast(info);
+  return true;
 }
 
 /* Позиция корабля по прогрессу визита (прямое вхождение → дуга → уход). */
@@ -1124,84 +1159,111 @@ function alienPosition(a, nowSec) {
   const s = (nowSec - a.t0) * a.speed;   // пройденный путь, px
   if (s <= 0 || s >= a.totalDur * a.speed) return null; // до старта / после конца
   let x, y;
-  if (s < a.entryLen) {
+  /* Позиция считается в МИРОВЫХ координатах (ctx сам применяет zoom).
+     Дуга облёта и путь входа — мировые px. */
+  const rFb = a.rFlybyPx;
+  const rEnter = a.entryLen;
+  if (s < rEnter) {
     // входим по прямой к точке касания орбиты облёта
-    const k = s / a.entryLen;
-    const tx = cx + Math.cos(a.angle) * a.rFlybyPx;
-    const ty = cy + Math.sin(a.angle) * a.rFlybyPx;
-    const sx = cx + Math.cos(a.angle) * a.R0;
-    const sy = cy + Math.sin(a.angle) * a.R0;
+    const k = s / rEnter;
+    const tx = cx + Math.cos(a.angle) * rFb;
+    const ty = cy + Math.sin(a.angle) * rFb;
+    const sx = cx + Math.cos(a.angle) * (rFb + rEnter);
+    const sy = cy + Math.sin(a.angle) * (rFb + rEnter);
     x = sx + (tx - sx) * k; y = sy + (ty - sy) * k;
-  } else if (s < a.entryLen + a.rFlybyPx * a.sweep) {
-    // облёт Солнца по дуге радиуса rFlybyPx
-    const arc = (s - a.entryLen) / a.rFlybyPx;   // radians travelled
+  } else if (s < rEnter + rFb * a.sweep) {
+    // облёт Солнца по дуге радиуса rFb
+    const arc = (s - rEnter) / rFb;   // radians travelled
     const ang = a.angle + a.dir * arc;
-    x = cx + Math.cos(ang) * a.rFlybyPx;
-    y = cy + Math.sin(ang) * a.rFlybyPx;
+    x = cx + Math.cos(ang) * rFb;
+    y = cy + Math.sin(ang) * rFb;
     a._lastAng = ang;
   } else {
     // уход по касательной от точки окончания дуги
-    const out = s - a.entryLen - a.rFlybyPx * a.sweep;
+    const out = s - rEnter - rFb * a.sweep;
     const ang = a.angle + a.dir * a.sweep;
     const tanX = -Math.sin(ang) * a.dir, tanY = Math.cos(ang) * a.dir;
-    x = cx + Math.cos(ang) * a.rFlybyPx + tanX * out;
-    y = cy + Math.sin(ang) * a.rFlybyPx + tanY * out;
+    x = cx + Math.cos(ang) * rFb + tanX * out;
+    y = cy + Math.sin(ang) * rFb + tanY * out;
   }
   return { x, y };
 }
 
+/* Отрисовка гостя: строгий минимализм — тёмный сигарообразный корпус с
+   бликом, маленькая светящаяся полоса иллюминаторов и тонкий парус-антенна.
+   Никаких «тарелок», куполов и мигающих огней. Размер ~16 px на базовом
+   зуме, масштабируется вместе с видом. */
 function drawAlien(nowSec) {
   const a = alienState.active;
   if (!a) return;
   const pos = alienPosition(a, nowSec);
-  if (!pos) { alienState.active = null; return; }   // визит завершён
-  a._screen = { x: pos.x, y: pos.y, r: 14 };
+  if (!pos) {                              // визит завершён — освобождаем слот
+    alienState.active = null;
+    a._screen = null;
+    if (state.selected === a) state.selected = null;
+    if (state.hovered === a) state.hovered = null;
+    return;
+  }
+  const sc = state.zoom;   // размер корабля растёт вместе с зумом
+  a._screen = { x: pos.x, y: pos.y, r: Math.max(8, 9 * sc) };
 
-  const heading = Math.atan2(pos.y - H / 2, pos.x - W / 2) + Math.PI / 2;
+  /* Направление полёта — производная траектории (касательная). */
+  const ahead = alienPosition(a, nowSec + 0.05);
+  const heading = ahead ? Math.atan2(ahead.y - pos.y, ahead.x - pos.x) : 0;
+
   ctx.save();
   ctx.translate(pos.x, pos.y);
   ctx.rotate(heading);
 
-  // след варп-двигателя
-  a.warpPhase += 0.35;
-  ctx.globalAlpha = 0.5 + 0.3 * Math.sin(a.warpPhase);
-  const trail = ctx.createLinearGradient(0, 10, 0, 46);
-  trail.addColorStop(0, hexToRgba(a.color, 0.7));
+  /* Инверсионный след — тонкая затухающая линия за кормой. */
+  a.warpPhase += 0.06;
+  const trail = ctx.createLinearGradient(-8 * sc, 0, -34 * sc, 0);
+  trail.addColorStop(0, hexToRgba(a.color, 0.35));
   trail.addColorStop(1, "rgba(0,0,0,0)");
-  ctx.fillStyle = trail;
-  ctx.beginPath();
-  ctx.moveTo(-5, 10); ctx.lineTo(5, 10); ctx.lineTo(2, 46); ctx.lineTo(-2, 46);
-  ctx.closePath(); ctx.fill();
-  ctx.globalAlpha = 1;
+  ctx.strokeStyle = trail;
+  ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.moveTo(-8 * sc, 0); ctx.lineTo(-34 * sc, 0); ctx.stroke();
 
-  // корпус летающей тарелки: купол + диск + огни
-  ctx.fillStyle = shadeDown(a.color);
-  ctx.beginPath(); ctx.ellipse(0, -4, 10, 7, 0, Math.PI, 0); ctx.fill(); // купол
-  const disc = ctx.createLinearGradient(-22, 0, 22, 0);
-  disc.addColorStop(0, "#556070"); disc.addColorStop(0.5, "#c8d2e0"); disc.addColorStop(1, "#556070");
-  ctx.fillStyle = disc;
-  ctx.beginPath(); ctx.ellipse(0, 0, 22, 8, 0, 0, Math.PI * 2); ctx.fill(); // диск
-  for (let i = 0; i < 5; i++) {
-    const lx = -16 + i * 8;
-    ctx.fillStyle = hexToRgba(a.color, 0.55 + 0.45 * Math.sin(a.warpPhase + i));
-    ctx.beginPath(); ctx.arc(lx, 3, 1.8, 0, Math.PI * 2); ctx.fill();       // мигающие огни
-  }
+  /* Корпус: вытянутый эллипс (сигара), градиент от света Солнца. */
+  const bodyGrad = ctx.createLinearGradient(0, -2.6 * sc, 0, 2.6 * sc);
+  bodyGrad.addColorStop(0, "#9aa4b2");
+  bodyGrad.addColorStop(0.45, "#4a5260");
+  bodyGrad.addColorStop(1, "#171b22");
+  ctx.fillStyle = bodyGrad;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 8 * sc, 2.4 * sc, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(220,228,240,0.25)";
+  ctx.lineWidth = 0.6;
+  ctx.stroke();
+
+  /* Полоса мягкого света вдоль борта — единственная «декорация». */
+  ctx.fillStyle = hexToRgba(a.color, 0.55 + 0.25 * Math.sin(a.warpPhase));
+  ctx.fillRect(-5.5 * sc, -0.4 * sc, 11 * sc, 0.8 * sc);
+
+  /* Тонкий «парус»-антенна у носа. */
+  ctx.strokeStyle = "rgba(200,210,230,0.5)";
+  ctx.lineWidth = 0.8;
+  ctx.beginPath();
+  ctx.moveTo(6 * sc, -1.4 * sc); ctx.lineTo(9.5 * sc, -5 * sc);
+  ctx.stroke();
+
   ctx.restore();
 
   // подпись расы рядом с кораблём
   if (state.showLabels) {
-    ctx.fillStyle = hexToRgba(a.color, 0.9);
-    ctx.font = "11px 'Segoe UI', sans-serif";
+    ctx.fillStyle = hexToRgba(a.color, 0.85);
+    ctx.font = "10px 'Segoe UI', sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText(`👽 ${a.race}`, pos.x, pos.y - 26);
+    ctx.fillText(a.race, pos.x, pos.y - 9 * sc - 5);
   }
 
   // подсветка при наведении/выборе
   const isSel = state.selected === a, isHov = state.hovered === a;
   if (isSel || isHov) {
     ctx.strokeStyle = isSel ? "rgba(255,215,106,0.9)" : hexToRgba(a.color, 0.6);
-    ctx.lineWidth = 2; ctx.setLineDash(isSel ? [] : [3, 4]);
-    ctx.beginPath(); ctx.arc(pos.x, pos.y, 26, 0, Math.PI * 2); ctx.stroke();
+    ctx.lineWidth = 1.5; ctx.setLineDash(isSel ? [] : [3, 4]);
+    ctx.beginPath(); ctx.arc(pos.x, pos.y, 13 * sc, 0, Math.PI * 2); ctx.stroke();
     ctx.setLineDash([]);
   }
 }
@@ -1211,23 +1273,31 @@ const alienToast = document.getElementById("alienToast");
 let toastTimer = null;
 function showAlienToast(info) {
   if (!alienToast) return;
-  alienToast.innerHTML = `🛸 Неопознанный объект! <b>${info.ship}</b> (${info.race}) вошёл в систему`;
+  alienToast.innerHTML = `Неопознанный объект: борт <b>${info.ship}</b> (${info.race}) вошёл в систему`;
   alienToast.classList.add("show");
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => alienToast.classList.remove("show"), 5200);
 }
 
 /* Проверка спавна визита — в каждом кадре, с пуассоновской вероятностью. */
+/* Случайный визит: пуассоновская проверка каждый кадр, но с гарантией —
+   если с прошлого спавна прошло больше 90 с, гость приходит гарантированно.
+   Раньше «вызов не срабатывал», потому что active мог не очищаться после
+   завершения визита; теперь очистка идёт в drawAlien (см. cleanup). */
 function maybeSpawnAlien(dtSec, nowSec) {
   if (!alienState.enabled || !state.playing) return;
   if (alienState.active) return;                       // гость ещё в системе
-  if (Math.random() < alienState.spawnChancePerSec * dtSec) startAlienVisit(nowSec);
+  const since = nowSec - alienState.lastSpawnReal;
+  if (since < alienState.minGapSec) return;            // короткая пауза между визитами
+  const overdue = since > 90 ? 1 : alienState.spawnChancePerSec * dtSec;
+  if (Math.random() < overdue) startAlienVisit(nowSec);
 }
 
 function pickAlien(mx, my) {
   const a = alienState.active;
   if (!a || !a._screen) return null;
-  return Math.hypot(mx - a._screen.x, my - a._screen.y) <= 26 ? a : null;
+  /* Радиус попадания — как у корабля (масштабируется зумом), +5 px запаса. */
+  return Math.hypot(mx - a._screen.x, my - a._screen.y) <= a._screen.r + 5 ? a : null;
 }
 
 function showAlienInfo(a) {
@@ -1610,7 +1680,9 @@ document.getElementById("btnAlienCall").addEventListener("click", () => {
     alienState.enabled = true;
     document.getElementById("chkAliens").checked = true;
   }
-  if (!alienState.active) startAlienVisit(performance.now() / 1000);
+  /* force=true: если предыдущий гость завис/ещё летит — он досрочно
+     завершает визит, новый появляется гарантированно по нажатию. */
+  startAlienVisit(performance.now() / 1000, true);
 });
 
 /* Сноска: только номер версии сборки — без описаний и подробностей
