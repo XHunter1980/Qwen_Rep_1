@@ -32,6 +32,9 @@ const PLANETS = [
     color: "#b5a79a", shades: ["#d8cec2", "#9c8f82", "#6e6258"],
     moons: 0, type: "Каменистая планета",
     desc: "Ближайшая к Солнцу и самая маленькая планета. Дневная сторона раскаляется до +430 °C, ночная остывает до −180 °C.",
+    // Крупнейшие луны (опциональный слой): periodDays — сидерический период,
+    // distKm — большая полуось орбиты, relR — радиус относительно Земли, drawOrbR — орбита на экране (px)
+    majorMoons: [],
   },
   {
     name: "Венера", nameEn: "Venus",
@@ -40,6 +43,7 @@ const PLANETS = [
     color: "#e6c47a", shades: ["#f5e0ac", "#dfb877", "#a97f49"],
     moons: 0, type: "Каменистая планета",
     desc: "Самая горячая планета (≈ +465 °C) из-за плотной углекислотной атмосферы и парникового эффекта. Вращается в обратную сторону.",
+    majorMoons: [],
   },
   {
     name: "Земля", nameEn: "Earth",
@@ -48,6 +52,9 @@ const PLANETS = [
     color: "#4f8fd6", shades: ["#8ec6ff", "#3f7fc8", "#1d4a86"],
     moons: 1, type: "Каменистая планета",
     desc: "Единственная известная планета с жизнью. 71 % поверхности покрыт водой, атмосферу защищает магнитное поле.",
+    majorMoons: [
+      { name: "Луна", nameEn: "Moon", periodDays: 27.3, distKm: 384400, relR: 0.273, drawOrbR: 19, color: "#cfcfcf" },
+    ],
   },
   {
     name: "Марс", nameEn: "Mars",
@@ -56,6 +63,10 @@ const PLANETS = [
     color: "#d1663d", shades: ["#f08a5d", "#c85a34", "#8a3a20"],
     moons: 2, type: "Каменистая планета",
     desc: "«Красная планета» — оксид железа в грунте. Здесь находится самый большой вулкан Солнечной системы — Олимп (≈ 22 км).",
+    majorMoons: [
+      { name: "Фобос", nameEn: "Phobos", periodDays: 0.319, distKm: 9376, relR: 0.0016, drawOrbR: 12, color: "#a89a8c" },
+      { name: "Деймос", nameEn: "Deimos", periodDays: 1.263, distKm: 23463, relR: 0.0009, drawOrbR: 18, color: "#bdb0a2" },
+    ],
   },
   {
     name: "Юпитер", nameEn: "Jupiter",
@@ -64,6 +75,12 @@ const PLANETS = [
     color: "#d9a066", shades: ["#eec79a", "#cf9460", "#9a6a40"],
     moons: 95, type: "Газовый гигант",
     desc: "Крупнейшая планета: в неё поместились бы 1300 Земель. Большое красное пятно — шторм больше Земли, бушующий столетиями.",
+    majorMoons: [
+      { name: "Ио", nameEn: "Io", periodDays: 1.769, distKm: 421700, relR: 0.286, drawOrbR: 28, color: "#e8d174" },
+      { name: "Европа", nameEn: "Europa", periodDays: 3.551, distKm: 671034, relR: 0.245, drawOrbR: 35, color: "#d9cbb2" },
+      { name: "Ганимед", nameEn: "Ganymede", periodDays: 7.155, distKm: 1070412, relR: 0.413, drawOrbR: 44, color: "#b8a894" },
+      { name: "Каллисто", nameEn: "Callisto", periodDays: 16.689, distKm: 1882709, relR: 0.378, drawOrbR: 55, color: "#9d9184" },
+    ],
   },
   {
     name: "Сатурн", nameEn: "Saturn",
@@ -72,6 +89,11 @@ const PLANETS = [
     color: "#e3cf9d", shades: ["#f3e4bd", "#dcc48c", "#ab9260"],
     moons: 146, type: "Газовый гигант",
     desc: "Знаменит кольцами из льда и камней шириной ~280 000 км и толщиной всего десятки метров. Планета легче воды.",
+    majorMoons: [
+      { name: "Титан", nameEn: "Titan", periodDays: 15.945, distKm: 1221870, relR: 0.404, drawOrbR: 46, color: "#e0b463" },
+      { name: "Рея", nameEn: "Rhea", periodDays: 4.518, distKm: 527108, relR: 0.124, drawOrbR: 34, color: "#cfc9c0" },
+      { name: "Япет", nameEn: "Iapetus", periodDays: 79.33, distKm: 3560820, relR: 0.098, drawOrbR: 62, color: "#b6ab9c" },
+    ],
   },
   {
     name: "Уран", nameEn: "Uranus",
@@ -80,6 +102,10 @@ const PLANETS = [
     color: "#9fdfe6", shades: ["#c9f2f6", "#8ed4dd", "#5aa4b0"],
     moons: 28, type: "Ледяной гигант",
     desc: "Вращается «лёжа на боку» — ось наклонена на 98°. Метан в атмосфере придаёт ему голубовато-зелёный цвет.",
+    majorMoons: [
+      { name: "Титания", nameEn: "Titania", periodDays: 8.706, distKm: 435910, relR: 0.124, drawOrbR: 26, color: "#c5ccd2" },
+      { name: "Оберон", nameEn: "Oberon", periodDays: 13.463, distKm: 583520, relR: 0.119, drawOrbR: 34, color: "#b3bcc4" },
+    ],
   },
   {
     name: "Нептун", nameEn: "Neptune",
@@ -88,6 +114,9 @@ const PLANETS = [
     color: "#4a6fdc", shades: ["#7d9bf0", "#4066cc", "#27408f"],
     moons: 16, type: "Ледяной гигант",
     desc: "Самая далёкая планета. Ветры достигают 2100 км/ч — быстрейшие в Солнечной системе. Обнаружен «на кончике пера» (1846 г.).",
+    majorMoons: [
+      { name: "Тритон", nameEn: "Triton", periodDays: -5.877, distKm: 354759, relR: 0.212, drawOrbR: 28, color: "#cdd8e8" },
+    ],
   },
 ];
 
@@ -115,6 +144,7 @@ const state = {
   galaxyMode: false,    // режим движения по Галактике
   swirl: 1,             // множитель скорости вихря
   showTrails: true,     // рисовать спиральные траектории
+  showMoons: true,      // опциональный слой: крупнейшие луны планет
 };
 
 /* ---------- Звёздный фон + галактика ---------- */
@@ -242,8 +272,12 @@ function planetPosition(planet) {
   };
 }
 
-// стартовые фазы — планеты разбросаны по орбитам
-PLANETS.forEach((p, i) => { p.phase = (i * 2.399963) % (Math.PI * 2); }); // золотой угол
+// стартовые фазы планет и лун — разбросаны по орбитам (золотой угол)
+PLANETS.forEach((p, i) => {
+  p.phase = (i * 2.399963) % (Math.PI * 2);
+  if (!p.majorMoons) return;
+  p.majorMoons.forEach((m, j) => { m.phase = ((j + 1) * 2.399963 + p.phase) % (Math.PI * 2); });
+});
 
 /* =========================================================
    РЕЖИМ «ГАЛАКТИКА»: Солнечная система движется вокруг
@@ -299,6 +333,23 @@ function planetAtTime(planet, tDays) {
 
 function toScreen(px, py, sc) {
   return { x: sc.cx + px * sc.scale, y: sc.cy + py * sc.scale };
+}
+
+/* ---------- Позиции лун (опциональный слой) ----------
+   Луна обращается вокруг планеты: угол = 2π * simDays / periodDays.
+   Отрицательный период (Тритон) — ретроградное обращение. */
+const MOON_ZOOM = 1.5; // визуальное усиление масштаба спутниковой системы
+
+function moonPosition(planet, moon, pos, R) {
+  const scale = planetScreenRadius(planet) / planet.drawR; // множитель реальных размеров
+  const ang = (state.simDays / moon.periodDays) * Math.PI * 2 + moon.phase;
+  const orbR = Math.max(R + 4, moon.drawOrbR * scale * MOON_ZOOM);
+  return {
+    x: pos.x + Math.cos(ang) * orbR,
+    y: pos.y + Math.sin(ang) * orbR * 0.62, // тот же наклон плоскости, что и у орбит
+    r: Math.max(1.3, moon.relR * R),
+    orbR,
+  };
 }
 
 /* ---------- Отрисовка ---------- */
@@ -577,6 +628,20 @@ function drawPlanet(p, timeSec) {
 
   if (p.hasRings) drawRings(p, pos, R, "front");
 
+  if (state.showMoons && p.majorMoons) {
+    for (const m of p.majorMoons) {
+      const mp = moonPosition(p, m, pos, R);
+      m._screen = { x: mp.x, y: mp.y, r: mp.r, planet: p.name }; // для попаданий
+    }
+  } else if (p.majorMoons) {
+    for (const m of p.majorMoons) m._screen = null;
+  }
+
+  // крупнейшие луны (опциональный слой): всегда поверх диска планеты
+  if (state.showMoons && p.majorMoons) {
+    for (const m of p.majorMoons) drawMoon(p, m, pos, R, isSel || isHov);
+  }
+
   // подпись
   if (state.showLabels) {
     ctx.fillStyle = isSel ? "#ffd76a" : "rgba(210, 222, 245, 0.85)";
@@ -584,6 +649,48 @@ function drawPlanet(p, timeSec) {
     ctx.textAlign = "center";
     ctx.fillText(p.name, pos.x, pos.y - R - 8);
   }
+}
+
+/* ---------- Луны: орбиты, диски, подписи ---------- */
+function drawMoon(planet, moon, pos, R, highlight) {
+  const mp = moonPosition(planet, moon, pos, R);
+
+  // орбита луны вокруг планеты
+  ctx.save();
+  ctx.strokeStyle = hexToRgba(moon.color, highlight ? 0.5 : 0.28);
+  ctx.lineWidth = 1;
+  ctx.setLineDash([3, 4]);
+  ctx.beginPath();
+  ctx.ellipse(pos.x, pos.y, mp.orbR, mp.orbR * 0.62, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+
+  // диск луны с подсветкой со стороны планеты/Солнца
+  const sunDir = Math.atan2(pos.y - scene.cy, pos.x - scene.cx);
+  const gx = mp.x - Math.cos(sunDir) * mp.r * 0.4;
+  const gy = mp.y - Math.sin(sunDir) * mp.r * 0.4;
+  const g = ctx.createRadialGradient(gx, gy, mp.r * 0.15, mp.x, mp.y, mp.r * 1.15);
+  g.addColorStop(0, "#f2efe9");
+  g.addColorStop(0.55, moon.color);
+  g.addColorStop(1, shadeDown(moon.color));
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(mp.x, mp.y, mp.r, 0, Math.PI * 2);
+  ctx.fill();
+
+  // имя — при выборе/наведении на планету или включённых подписях при увеличенном масштабе
+  if (highlight || (state.showLabels && planetScreenRadius(planet) >= planet.drawR && R > 12)) {
+    ctx.fillStyle = "rgba(200, 210, 235, 0.75)";
+    ctx.font = "10px 'Segoe UI', sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(moon.name, mp.x, mp.y - mp.r - 4);
+  }
+}
+
+function shadeDown(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  const f = (v) => Math.round(v * 0.45);
+  return `rgb(${f((n >> 16) & 255)}, ${f((n >> 8) & 255)}, ${f(n & 255)})`;
 }
 
 function drawRings(p, pos, R, part) {
@@ -645,7 +752,7 @@ function drawGalaxyHud() {
   ctx.restore();
 }
 
-/* ---------- Попадание курсора по планете ---------- */
+/* ---------- Попадание курсора по планете / луне ---------- */
 function pickPlanet(mx, my) {
   let best = null, bestDist = Infinity;
   for (const p of PLANETS) {
@@ -655,6 +762,29 @@ function pickPlanet(mx, my) {
     if (d <= hitR && d < bestDist) { best = p; bestDist = d; }
   }
   return best;
+}
+
+/* Клик/наведение на луну — возвращаем планету-хозяина + саму луну */
+function pickMoon(mx, my) {
+  let best = null, bestDist = Infinity;
+  for (const p of PLANETS) {
+    if (!p.majorMoons) continue;
+    for (const m of p.majorMoons) {
+      if (!m._screen) continue;
+      const d = Math.hypot(mx - m._screen.x, my - m._screen.y);
+      const hitR = Math.max(m._screen.r + 5, 10);
+      if (d <= hitR && d < bestDist) { best = { moon: m, planet: p }; bestDist = d; }
+    }
+  }
+  return best;
+}
+
+function pickAny(mx, my) {
+  const pm = pickMoon(mx, my);
+  if (pm) return { planet: pm.planet, moon: pm.moon };
+  const p = pickPlanet(mx, my);
+  if (p) return { planet: p, moon: null };
+  return null;
 }
 
 /* ---------- UI: карточка информации ---------- */
@@ -674,16 +804,30 @@ function formatPeriod(days) {
   return `${years.toFixed(years >= 10 ? 1 : 2)} лет (${Math.round(days)} сут)`;
 }
 
-function showInfo(p) {
+function showInfo(p, moon = null) {
   state.selected = p;
-  infoIcon.style.background = `radial-gradient(circle at 32% 30%, ${p.shades[0]}, ${p.shades[1]} 55%, ${p.shades[2]})`;
-  infoName.textContent = `${p.name}  ·  ${p.nameEn}`;
-  infoSize.textContent = `${p.diameterKm.toLocaleString("ru-RU")} км`;
-  infoDist.textContent = `${p.orbitAU} а.е. (${Math.round(p.orbitAU * 149.6).toLocaleString("ru-RU")} млн км)`;
-  infoPeriod.textContent = formatPeriod(p.periodDays);
-  infoMoons.textContent = p.moons === 0 ? "нет" : String(p.moons);
-  infoType.textContent = p.type;
-  infoDesc.textContent = p.desc;
+  if (moon) {
+    infoIcon.style.background = `radial-gradient(circle at 32% 30%, #f2efe9, ${moon.color} 55%, ${shadeDown(moon.color)})`;
+    infoName.textContent = `${moon.name}  ·  ${moon.nameEn}`;
+    const diaKm = Math.round(moon.relR * 12742);
+    infoSize.textContent = `≈ ${diaKm.toLocaleString("ru-RU")} км (диаметр)`;
+    infoDist.textContent = `${moon.distKm.toLocaleString("ru-RU")} км от ${p.name.toLowerCase()}`;
+    const retro = moon.periodDays < 0 ? " (ретроградное обращение)" : "";
+    infoPeriod.textContent = `${Math.abs(moon.periodDays).toLocaleString("ru-RU", { maximumFractionDigits: 3 })} сут${retro}`;
+    infoMoons.textContent = `спутник план. ${p.name}`;
+    infoType.textContent = "Естественный спутник";
+    infoDesc.textContent = `${moon.name} — естественный спутник планеты ${p.name}. ` +
+      `Нажмите на диск ${p.name.toLowerCase()}, чтобы увидеть данные о планете.`;
+  } else {
+    infoIcon.style.background = `radial-gradient(circle at 32% 30%, ${p.shades[0]}, ${p.shades[1]} 55%, ${p.shades[2]})`;
+    infoName.textContent = `${p.name}  ·  ${p.nameEn}`;
+    infoSize.textContent = `${p.diameterKm.toLocaleString("ru-RU")} км`;
+    infoDist.textContent = `${p.orbitAU} а.е. (${Math.round(p.orbitAU * 149.6).toLocaleString("ru-RU")} млн км)`;
+    infoPeriod.textContent = formatPeriod(p.periodDays);
+    infoMoons.textContent = p.moons === 0 ? "нет" : String(p.moons);
+    infoType.textContent = p.type;
+    infoDesc.textContent = p.desc;
+  }
   infoPanel.classList.remove("hidden");
 }
 
@@ -698,11 +842,13 @@ document.getElementById("btnCloseInfo").addEventListener("click", hideInfo);
 const tooltip = document.getElementById("tooltip");
 
 canvas.addEventListener("mousemove", (e) => {
-  const p = pickPlanet(e.clientX, e.clientY);
-  state.hovered = p;
-  canvas.classList.toggle("hovering", !!p);
-  if (p) {
-    tooltip.textContent = `${p.name} — нажмите для подробностей`;
+  const hit = pickAny(e.clientX, e.clientY);
+  state.hovered = hit ? hit.planet : null;
+  canvas.classList.toggle("hovering", !!hit);
+  if (hit) {
+    tooltip.textContent = hit.moon
+      ? `${hit.moon.name} — луна план. ${hit.planet.name} (нажмите для подробностей)`
+      : `${hit.planet.name} — нажмите для подробностей`;
     tooltip.style.left = e.clientX + "px";
     tooltip.style.top = e.clientY + "px";
     tooltip.classList.remove("hidden");
@@ -717,16 +863,16 @@ canvas.addEventListener("mouseleave", () => {
 });
 
 canvas.addEventListener("click", (e) => {
-  const p = pickPlanet(e.clientX, e.clientY);
-  if (p) showInfo(p);
+  const hit = pickAny(e.clientX, e.clientY);
+  if (hit) showInfo(hit.planet, hit.moon);
   else hideInfo();
 });
 
 /* Тач-поддержка */
 canvas.addEventListener("touchstart", (e) => {
   const t = e.touches[0];
-  const p = pickPlanet(t.clientX, t.clientY);
-  if (p) { showInfo(p); e.preventDefault(); }
+  const hit = pickAny(t.clientX, t.clientY);
+  if (hit) { showInfo(hit.planet, hit.moon); e.preventDefault(); }
 }, { passive: true });
 
 /* ---------- Управление: воспроизведение / пауза / скорость ---------- */
@@ -767,6 +913,7 @@ presetBtns.forEach(b => b.addEventListener("click", () => setSpeed(parseFloat(b.
 document.getElementById("chkOrbits").addEventListener("change", (e) => state.showOrbits = e.target.checked);
 document.getElementById("chkLabels").addEventListener("change", (e) => state.showLabels = e.target.checked);
 document.getElementById("chkScale").addEventListener("change", (e) => state.realScale = e.target.checked);
+document.getElementById("chkMoons").addEventListener("change", (e) => state.showMoons = e.target.checked);
 
 /* ---------- Режим «Галактика»: переключение и управление вихрем ---------- */
 const btnMode       = document.getElementById("btnMode");
@@ -784,12 +931,13 @@ function setGalaxyMode(on) {
   galaxyBlock.classList.toggle("hidden", !on);
   topHint.textContent = on
     ? "Солнечная система летит вокруг центра Галактики — траектории планет закручиваются в спирали"
-    : "Нажмите на планету, чтобы узнать о ней больше";
+    : "Нажмите на планету или луну, чтобы узнать о ней больше";
   footnote.innerHTML = on
     ? "Режим «Галактика»: Солнце движется по галактической орбите, планеты — спираль (циклоида). " +
-      "Реальный галактический год ≈ 230 млн земных лет; для наглядности масштаб времени сжат."
+      "Реальный галактический год ≈ 230 млн земных лет; для наглядности масштаб времени сжат. " +
+      "Масштаб лунных орбит условно увеличен."
     : "Демонстрация: орбитальные периоды пропорциональны реальным (Земля = 365 сут ≈ 20 сек при скорости 1×). " +
-      "Расстояния и размеры условны для наглядности.";
+      "Расстояния и размеры условны для наглядности. Масштаб лунных орбит условно увеличен.";
 }
 
 btnMode.addEventListener("click", () => setGalaxyMode(!state.galaxyMode));
@@ -813,6 +961,10 @@ window.addEventListener("keydown", (e) => {
   } else if ((e.key === "g" || e.key === "G" || e.key === "п" || e.key === "П") &&
              !e.ctrlKey && !e.metaKey && !e.altKey) {
     setGalaxyMode(!state.galaxyMode);
+  } else if ((e.key === "m" || e.key === "M" || e.key === "ь" || e.key === "Ь") &&
+             !e.ctrlKey && !e.metaKey && !e.altKey) {
+    state.showMoons = !state.showMoons;
+    document.getElementById("chkMoons").checked = state.showMoons;
   } else if (e.key === "+" || e.key === "=") {
     setSpeed(Math.min(10, +(state.speed + 0.5).toFixed(1)));
   } else if (e.key === "-") {
