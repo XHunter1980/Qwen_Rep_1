@@ -8,7 +8,7 @@
 
 /* Версия сборки — видна в заголовке страницы, в шапке и в консоли,
    чтобы по открытой страничке сразу было понятно, какая сборка запущена. */
-const VERSION = "v1.8 (Исправлен крах v1.7: восстановлены недостающие функции — круговые орбиты + кометы)";
+const VERSION = "v2.0 (Два режима орбит: эллипсы Кеплера + упрощённые круги; лог-шкала с подробным внутренним регионом; Солнце — фокус)";
 document.title = `Солнечная система ${VERSION}`;
 console.log(`%c☀️ Солнечная система — сборка: ${VERSION}`, "color:#ffd75e;font-weight:bold");
 /* Бейдж версии в шапке страницы */
@@ -33,6 +33,8 @@ const state = {
   playing: true,
   speed: 1,
   simDays: 0,                    // модельное время в сутках от старта
+  orbitMode: "ellipse",          // "ellipse" — эллипсы Кеплера (Солнце в фокусе)
+                                 // "circle"  — упрощённые круговые орбиты
   showOrbits: true,
   showLabels: true,
   realScale: false,
@@ -43,15 +45,21 @@ const state = {
   hovered: null,
 };
 
-/* ---------- Пропорциональная шкала расстояний ----------
-   Радиус орбиты на экране строго ∝ числу а.е.: Нептун (30.05 а.е.)
-   ровно в ~77 раз дальше Меркурия (0.39 а.е.), как в реальности.
-   Шкала пересчитывается под размер окна, чтобы орбита Нептуна
-   всегда помещалась по горизонтали. */
+/* ---------- ЛОГАРИФМИЧЕСКАЯ шкала расстояний ----------
+   Линейная шкала «съедает» внутреннюю систему: при видимом Нептуне
+   (30 а.е.) Меркурий–Марс слипались в точку у Солнца. Степенная
+   шкала r ∝ a^P (P = 0.52) сжимает внешние области и растягивает
+   внутренние: между орбитами Земли и Марса теперь заметный зазор,
+   пояс астероидов читается отдельно от Марса и Юпитера.
+   Порядок тел и отсутствие пересечений сохраняются (шкала монотонна). */
+const SCALE_POW = 0.52;
+const AU_MAX = 30.05;                                  // орбита Нептуна
+function availPx() {
+  // полуширина / «глубина» эллипсов под размер окна
+  return Math.min(W / 2 - 46, (H / 2 - 34) / TILT);
+}
 function scaleAUtoPx(aAU) {
-  const maxAU = 30.05;                                   // орбита Нептуна
-  const availPx = Math.min(W / 2 - 46, (H / 2 - 34) / TILT); // полуширина / «глубина» эллипса
-  return aAU * (availPx / maxAU);
+  return Math.pow(aAU / AU_MAX, SCALE_POW) * availPx();
 }
 
 /* Угол тела на КРУГОВОЙ орбите: полный оборот за periodDays суток */
@@ -59,13 +67,30 @@ function circleAngle(simDays, periodDays, phase0) {
   return ((simDays / Math.abs(periodDays)) * Math.PI * 2 + phase0) % (Math.PI * 2);
 }
 
-/* Позиция планеты: упрощённая КРУГОВАЯ орбита (эллипс из-за наклона обзора),
-   Солнце — в центре. Это тот самый «упрощённый режим», пришедший на смену
-   режиму «Галактика». */
+/* Позиция планеты — зависит от выбранного режима орбит:
+   • "ellipse" — РЕАЛЬНЫЙ эллипс Кеплера (a, e из данных планет, без
+     преувеличений), Солнце строго в ФОКУСЕ; движение неравномерно:
+     быстрее в перигелии, медленнее в афелии (II закон Кеплера).
+   • "circle"  — упрощённая круговая орбита с радиусом = a, Солнце в центре. */
 function planetPosition(p) {
-  const rPx = scaleAUtoPx(p.orbitAU);
-  return circleScreenPoint(W / 2, H / 2, rPx,
-    circleAngle(state.simDays, p.periodDays, p.phase0), TILT);
+  if (state.orbitMode === "circle") {
+    const rPx = scaleAUtoPx(p.orbitAU);
+    return circleScreenPoint(W / 2, H / 2, rPx,
+      circleAngle(state.simDays, p.periodDays, p.phase0), TILT);
+  }
+  // Эллипс Кеплера: большая полуось a и эксцентриситет e — реальные.
+  // Средней аномалией M служит угол обращения по времени (линейно растёт
+  // со временем — это и есть «равномерное усреднённое» движение).
+  const aPx = scaleAUtoPx(p.orbitAU);
+  const bPx = aPx * Math.sqrt(1 - p.ecc * p.ecc);
+  const Mraw = circleAngle(state.simDays, p.periodDays, p.phase0);
+  const E = keplerSolve(((Mraw + Math.PI) % (Math.PI * 2)) - Math.PI, p.ecc);
+  const ox = Math.cos(E) * aPx - aPx * p.ecc;   // фокус (Солнце) в начале координат
+  const oy = Math.sin(E) * bPx;
+  const w = (p.omegaDeg * Math.PI) / 180;       // ориентация эллипса на плоскости
+  const rx = ox * Math.cos(w) - oy * Math.sin(w);
+  const ry = (ox * Math.sin(w) + oy * Math.cos(w)) * TILT;
+  return { x: W / 2 + rx, y: H / 2 + ry };
 }
 
 /* Экранное расстояние планеты от центра (для попаданий и подписей) */
@@ -168,17 +193,33 @@ function drawBackground(timeSec) {
   ctx.globalAlpha = 1;
 }
 
-/* ---------- Орбиты планет: упрощённые окружности (сжаты наклоном) ---------- */
+/* ---------- Орбиты планет: два режима ----------
+   • "ellipse" — реальные эллипсы Кеплера (без преувеличения e),
+     центр эллипса смещён от Солнца на c = a·e: Солнце — в ФОКУСЕ.
+   • "circle"  — упрощённые окружности радиуса a вокруг Солнца. */
 function drawOrbits() {
   if (!state.showOrbits) return;
   ctx.save();
   ctx.strokeStyle = "rgba(140, 160, 210, 0.22)";
   ctx.lineWidth = 1;
   for (const p of PLANETS) {
-    const rPx = scaleAUtoPx(p.orbitAU);
-    ctx.beginPath();
-    ctx.ellipse(W / 2, H / 2, rPx, rPx * TILT, 0, 0, Math.PI * 2);
-    ctx.stroke();
+    const aPx = scaleAUtoPx(p.orbitAU);
+    if (state.orbitMode === "circle") {
+      ctx.beginPath();
+      ctx.ellipse(W / 2, H / 2, aPx, aPx * TILT, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    } else {
+      const bPx = aPx * Math.sqrt(1 - p.ecc * p.ecc);
+      const w = (p.omegaDeg * Math.PI) / 180;
+      ctx.save();
+      ctx.translate(W / 2, H / 2);
+      ctx.rotate(w);
+      // центр эллипса смещён от фокуса (Солнца) на −a·e по оси перигелия
+      ctx.beginPath();
+      ctx.ellipse(-aPx * p.ecc, 0, aPx, bPx * TILT, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
   }
   ctx.restore();
 }
@@ -268,11 +309,12 @@ function drawCometOrbits() {
 function drawComets(timeSec) {
   if (!state.showComets) return;
   const cx = W / 2, cy = H / 2;
-  const pxPerAU = scaleAUtoPx(1);
+  /* Обратная степенной шкале функция: экранное расстояние → а.е. */
+  const toAU = (px) => AU_MAX * Math.pow(px / availPx(), 1 / SCALE_POW);
   for (const c of COMETS) {
     const pos = cometPosition(c);
     // расстояние до Солнца в а.е. (в плоскости орбиты, без учёта наклона вида)
-    const rAU = Math.hypot(pos.x - cx, (pos.y - cy) / TILT) / pxPerAU;
+    const rAU = toAU(Math.hypot(pos.x - cx, (pos.y - cy) / TILT));
     const R = 2.6;                                               // ядро (в масштабе не отображается)
     c._screen = { x: pos.x, y: pos.y, r: Math.max(R, 8) };
 
@@ -471,15 +513,18 @@ const PLANETS = [
   },
 ];
 
-/* Начальные фазы планет — фиксированные, чтобы картина была стабильной */
-PLANETS.forEach((p, i) => { p.phase0 = (i * 0.9) % (Math.PI * 2); });
+/* Начальные фазы планет — фиксированные, чтобы картина была стабильной.
+   omegaDeg — долгота перигелия (ориентация эллипса на плоскости эклиптики),
+   условно разнесена по планетам, чтобы перигелии не выстроились в одну линию. */
+const OMEGA_DEG = [77, 131, 102, 336, 14, 93, 173, 48];   // ≈ реальные долготы перигелия
+PLANETS.forEach((p, i) => { p.phase0 = (i * 0.9) % (Math.PI * 2); p.omegaDeg = OMEGA_DEG[i]; });
 
 /* =========================================================
    АСТЕРОИДНЫЙ ПОЯС — отрисовка (опциональный слой, клавиша B)
-   Все тела используют ОДНУ пропорциональную шкалу scaleAUtoPx,
-   поэтому пояс (2.22–3.38 а.е.) лежит строго между Марсом
-   (1.52 а.е.) и Юпитером (5.2 а.е.) и никогда не пересекает
-   их орбиты — как и в реальности.
+   Все тела используют ОДНУ шкалу scaleAUtoPx, поэтому пояс
+   (2.22–3.38 а.е.) лежит строго между Марсом (1.52 а.е.) и
+   Юпитером (5.2 а.е.) и никогда не пересекает их орбиты —
+   как и в реальности.
    ========================================================= */
 
 function beltAUtoPx(aAU) { return scaleAUtoPx(aAU); }
@@ -489,25 +534,25 @@ function beltAUtoPx(aAU) { return scaleAUtoPx(aAU); }
 const BELT_ASTEROIDS = [
   {
     name: "Церера", nameEn: "1 Ceres",
-    mainAU: 2.77, ecc: 0.076, periodDays: 1655, diameterKm: 946, M0: 120, drawR: 5,
+    mainAU: 2.77, ecc: 0.079, periodDays: 1655, diameterKm: 946, M0: 120, omegaDeg: 73, drawR: 5,
     color: "#b9b3a8", type: "Карликовая планета (главный пояс)",
     desc: "Крупнейший объект пояса астероидов и единственная карликовая планета внутри орбиты Нептуна. Содержит ~1/3 массы всего пояса; на поверхности — криовулканы и солёные отложения.",
   },
   {
     name: "Веста", nameEn: "4 Vesta",
-    mainAU: 2.36, ecc: 0.089, periodDays: 1321, diameterKm: 525, M0: 40, drawR: 4,
+    mainAU: 2.36, ecc: 0.089, periodDays: 1321, diameterKm: 525, M0: 40, omegaDeg: 151, drawR: 4,
     color: "#cfc6b8", type: "Астероид протопланетного типа",
     desc: "Второй по массе астероид пояса, дифференцированное тело с корой и ядром. Кратер Реясилиуса на южном полюсе — один из крупнейших в Солнечной системе; её осколки падают на Землю как метеориты HED.",
   },
   {
     name: "Паллада", nameEn: "2 Pallas",
-    mainAU: 2.77, ecc: 0.231, periodDays: 1686, diameterKm: 512, M0: 250, drawR: 4,
+    mainAU: 2.77, ecc: 0.231, periodDays: 1686, diameterKm: 512, M0: 250, omegaDeg: 325, drawR: 4,
     color: "#a9a29b", type: "Астероид B-класса (углеродистый)",
     desc: "Третье по размеру тело пояса с необычно сильным наклонением орбиты — 34.8°. Предположительно остаток «строительного блока» планет, не вошедшего в Юпитер.",
   },
   {
     name: "Гигия", nameEn: "10 Hygiea",
-    mainAU: 3.14, ecc: 0.117, periodDays: 2032, diameterKm: 434, M0: 310, drawR: 3.5,
+    mainAU: 3.14, ecc: 0.117, periodDays: 2032, diameterKm: 434, M0: 310, omegaDeg: 312, drawR: 3.5,
     color: "#9aa0a6", type: "Астероид C-класса (самый тёмный тип)",
     desc: "Четвёртое по размеру тело пояса, почти шароидное — кандидат в карликовые планеты. Поверхность из тёмных углеродистых пород; период вращения ~28 часов.",
   },
@@ -541,6 +586,24 @@ function circleScreenPoint(fx, fy, rPx, ang, tiltY) {
   return { x: fx + Math.cos(ang) * rPx, y: fy + Math.sin(ang) * rPx * tiltY };
 }
 
+/* Позиция крупнейшего астероида: в режиме "ellipse" — эллипс Кеплера
+   с Солнцем в фокусе; в режиме "circle" — упрощённый круг. */
+function asteroidEllipsePos(a, cx, cy) {
+  if (state.orbitMode === "circle") {
+    return circleScreenPoint(cx, cy, beltAUtoPx(a.mainAU),
+      circleAngle(state.simDays, a.periodDays, (a.M0 * Math.PI) / 180), TILT);
+  }
+  const aPx = beltAUtoPx(a.mainAU);
+  const bPx = aPx * Math.sqrt(1 - a.ecc * a.ecc);
+  const Mraw = circleAngle(state.simDays, a.periodDays, (a.M0 * Math.PI) / 180);
+  const E = keplerSolve(((Mraw + Math.PI) % (Math.PI * 2)) - Math.PI, a.ecc);
+  const ox = Math.cos(E) * aPx - aPx * a.ecc;
+  const oy = Math.sin(E) * bPx;
+  const w = (a.omegaDeg * Math.PI) / 180;   // долгота перигелия из данных
+  return { x: cx + ox * Math.cos(w) - oy * Math.sin(w),
+           y: cy + (ox * Math.sin(w) + oy * Math.cos(w)) * TILT };
+}
+
 function drawBelt(timeSec) {
   if (!state.showBelt) return;
   const cx = W / 2, cy = H / 2;
@@ -558,20 +621,28 @@ function drawBelt(timeSec) {
   }
   ctx.globalAlpha = 1;
 
-  /* Крупнейшие астероиды: видимые тела с подписями и круговыми орбитами */
+  /* Крупнейшие астероиды: видимые тела с подписями.
+     В режиме "ellipse" — по эллипсам Кеплера (Солнце в фокусе),
+     в режиме "circle" — по упрощённым кругам. */
   for (const a of BELT_ASTEROIDS) {
-    const ang = circleAngle(state.simDays, a.periodDays, (a.M0 * Math.PI) / 180);
     const rPx = beltAUtoPx(a.mainAU);
-    const pos = circleScreenPoint(cx, cy, rPx, ang, TILT);
+    const pos = asteroidEllipsePos(a, cx, cy);
 
-    // орбита астероида — пунктирный круг (та же шкала, что у планет)
+    // орбита астероида — пунктир (круг или эллипс с Солнцем в фокусе)
     if (state.showOrbits) {
       ctx.save();
       ctx.strokeStyle = hexToRgba(a.color, 0.28);
       ctx.lineWidth = 1;
       ctx.setLineDash([3, 5]);
       ctx.beginPath();
-      ctx.ellipse(cx, cy, rPx, rPx * TILT, 0, 0, Math.PI * 2);
+      if (state.orbitMode === "circle") {
+        ctx.ellipse(cx, cy, rPx, rPx * TILT, 0, 0, Math.PI * 2);
+      } else {
+        const bPx = rPx * Math.sqrt(1 - a.ecc * a.ecc);
+        ctx.translate(cx, cy);
+        ctx.rotate(((a.omegaDeg) * Math.PI) / 180);
+        ctx.ellipse(-rPx * a.ecc, 0, rPx, bPx * TILT, 0, 0, Math.PI * 2);
+      }
       ctx.stroke();
       ctx.restore();
     }
@@ -783,7 +854,7 @@ function frame(now) {
 
   const timeSec = now / 1000;
   drawBackground(timeSec);
-  drawOrbits();                          // упрощённые круговые орбиты планет
+  drawOrbits();                          // орбиты планет: эллипсы Кеплера или упрощённые круги
   drawCometOrbits();                     // эллиптические орбиты комет (пунктир)
   drawBelt(timeSec);                     // астероидный пояс + крупнейшие астероиды
   drawSun(timeSec);
@@ -1014,6 +1085,25 @@ btnReset.addEventListener("click", () => {
   hideInfo();
 });
 
+/* ---------- Переключатель режима орбит: эллипсы Кеплера / упрощённые круги ---------- */
+const btnOrbitMode = document.getElementById("btnOrbitMode");
+
+function updateOrbitModeButton() {
+  const isEllipse = state.orbitMode === "ellipse";
+  btnOrbitMode.textContent = isEllipse ? "◯ Упрощённые круги" : "🪐 Эллипсы Кеплера";
+  btnOrbitMode.title = isEllipse
+    ? "Переключить на упрощённые круговые орбиты (O)"
+    : "Переключить на реальные эллиптические орбиты с Солнцем в фокусе (O)";
+}
+
+function toggleOrbitMode() {
+  state.orbitMode = state.orbitMode === "ellipse" ? "circle" : "ellipse";
+  updateOrbitModeButton();
+}
+
+btnOrbitMode.addEventListener("click", toggleOrbitMode);
+updateOrbitModeButton();
+
 speedSlider.addEventListener("input", () => setSpeed(parseFloat(speedSlider.value)));
 presetBtns.forEach(b => b.addEventListener("click", () => setSpeed(parseFloat(b.dataset.speed))));
 
@@ -1034,13 +1124,13 @@ document.getElementById("chkComets").addEventListener("change", (e) => {
 /* Сноска: описание текущей демонстрации */
 const footnote = document.getElementById("footnote");
 footnote.innerHTML =
-  "Демонстрация v1.8: упрощённые КРУГОВЫЕ орбиты планет с ПРОПОРЦИОНАЛЬНЫМИ реальными " +
-  "расстояниями (радиус на экране ∝ числу а.е.: Нептун в ~77 раз дальше Меркурия). " +
-  "Периоды пропорциональны настоящим (Земля = 365 сут ≈ 20 сек при скорости 1×). " +
-  "Пояс астероидов (2.2–3.4 а.е.) лежит строго между Марсом и Юпитером — орбиты не пересекаются. " +
-  "Кометы (Галлея, Хейл-Боппа, Энке, NEOWISE) движутся по реальным ЭЛЛИПТИЧЕСКИМ орбитам Кеплера " +
-  "с Солнцем в фокусе: быстрые у Солнца, медленные на окраине; хвост всегда направлен от Солнца. " +
-  "Размеры тел условны; масштаб лунных орбит увеличен.";
+  "Демонстрация v2.0: два режима орбит — реальные ЭЛЛИПСЫ Кеплера (Солнце в фокусе каждой орбиты, " +
+  "без преувеличения эксцентриситетов) и упрощённые КРУГИ (кнопка «◯ Упрощённые круги» / клавиша O). " +
+  "Расстояния — степенная (сжатая к логарифмической) шкала r ∝ a^0.52: внутренняя система видна подробно, " +
+  "порядок и непересечение орбит сохранены. Периоды пропорциональны настоящим (Земля = 365 сут ≈ 20 сек при 1×). " +
+  "Пояс астероидов (2.2–3.4 а.е.) лежит строго между Марсом и Юпитером. " +
+  "Кометы (Галлея, Хейл-Боппа, Энке, NEOWISE) — на реальных вытянутых эллипсах Кеплера с Солнцем в фокусе; " +
+  "хвост всегда направлен от Солнца. Размеры тел условны; масштаб лунных орбит увеличен.";
 
 /* Горячие клавиши */
 window.addEventListener("keydown", (e) => {
@@ -1066,6 +1156,9 @@ window.addEventListener("keydown", (e) => {
     const chk = document.getElementById("chkComets");
     chk.checked = state.showComets;
     if (!state.showComets && state.selected && state.selected.aAU) hideInfo();
+  } else if ((e.key === "o" || e.key === "O" || e.key === "щ" || e.key === "Щ") &&
+             !e.ctrlKey && !e.metaKey && !e.altKey) {
+    toggleOrbitMode();   // переключение эллипсы Кеплера ↔ упрощённые круги
   } else if (e.key === "+" || e.key === "=") {
     setSpeed(Math.min(10, +(state.speed + 0.5).toFixed(1)));
   } else if (e.key === "-") {

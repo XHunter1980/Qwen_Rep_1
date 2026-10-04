@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <meta name="description" content="Интерактивная модель Солнечной системы: упрощённые круговые орбиты с пропорциональными реальными расстояниями, кометы на вытянутых эллиптических орбитах с хвостами (Галлея, Хейла-Боппа, Энке), астероидный пояс строго между Марсом и Юпитером и крупнейшие луны планет." />
-<title>Солнечная система — круговые орбиты с пропорциональными расстояниями и кометами</title>
+<title>Солнечная система — эллипсы Кеплера и упрощённые круги, кометы, астероиды</title>
 <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -15,7 +15,7 @@
     <!-- Верхняя панель -->
     <header class="topbar">
       <h1>☀️ Солнечная система <span id="versionBadge" class="version-badge" title="Версия сборки — если её нет или она старая, вы открыли не тот архив"></span></h1>
-      <p class="hint">Нажмите на планету, луну, астероид или комету, чтобы узнать о нём больше · Горячие клавиши: Пробел, C, M, B, +/−</p>
+      <p class="hint">Нажмите на планету, луну, астероид или комету, чтобы узнать о нём больше · Горячие клавиши: Пробел, O, C, M, B, +/−</p>
     </header>
 
     <!-- Панель управления -->
@@ -24,6 +24,7 @@
         ⏸ Пауза
       </button>
       <button id="btnReset" class="ctrl-btn" title="Сбросить время и выбор">⟲ Сброс</button>
+      <button id="btnOrbitMode" class="ctrl-btn" title="Переключить режим орбит (O)">◯ Упрощённые круги</button>
       <div class="speed-block">
         <label for="speedSlider">Скорость:&nbsp;<span id="speedLabel">1×</span></label>
         <input id="speedSlider" type="range" min="0" max="10" step="0.1" value="1" />
