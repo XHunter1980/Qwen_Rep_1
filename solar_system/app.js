@@ -8,7 +8,7 @@
 
 /* Версия сборки — ТОЛЬКО номер, без описаний (по требованию).
    Видна в заголовке вкладки, в шапке страницы и в консоли. */
-const VERSION = "v2.7";
+const VERSION = "v2.9";
 document.title = `Солнечная система ${VERSION}`;
 console.log(`%c☀️ Солнечная система — сборка: ${VERSION}`, "color:#ffd75e;font-weight:bold");
 /* Бейдж версии в шапке страницы */
@@ -84,6 +84,19 @@ function circleAngle(simDays, periodDays, phase0) {
   return ((simDays / Math.abs(periodDays)) * Math.PI * 2 + phase0) % (Math.PI * 2);
 }
 
+/* Приведение угла к диапазону (−π, +π] БЕЗ потери знака.
+   Стандартное выражение (M + π) % 2π − π в JavaScript некорректно для
+   отрицательных M: оператор % сохраняет знак делимого, из-за чего
+   эллиптическая аномалия E получалась со «сдвинутым» знаком sin(E),
+   и тело при прохождении перигелия отражалось относительно оси
+   перигелия — визуально это выглядело как скачок/рывок у Солнца. */
+function normalizeAngle(a) {
+  let x = a % (Math.PI * 2);
+  if (x > Math.PI) x -= Math.PI * 2;
+  if (x <= -Math.PI) x += Math.PI * 2;
+  return x;
+}
+
 /* Позиция планеты — зависит от выбранного режима орбит:
    • "ellipse" — РЕАЛЬНЫЙ эллипс Кеплера (a, e из данных планет, без
      преувеличений), Солнце строго в ФОКУСЕ; движение неравномерно:
@@ -105,7 +118,10 @@ function planetPosition(p) {
   const aPx = scaleAUtoPx(p.orbitAU);
   const bPx = aPx * Math.sqrt(1 - p.ecc * p.ecc);
   const Mraw = circleAngle(state.simDays, p.periodDays, p.phase0);
-  const Ecc = keplerSolve(((Mraw + Math.PI) % (Math.PI * 2)) - Math.PI, p.ecc);
+  /* Нормализация M в (−π, +π] без потери знака: выражение (M+π)%2π−π на
+     отрицательных углах давало неверный знак sin(E) — «скачки» тела через
+     ось перигелия при прохождении Солнца. */
+  const Ecc = keplerSolve(normalizeAngle(Mraw), p.ecc);
   const rAU = p.orbitAU * (1 - p.ecc * Math.cos(Ecc));   // истинное расстояние до Солнца
   const ox = Math.cos(Ecc) * aPx - aPx * p.ecc;   // фокус (Солнце) в начале координат
   const oy = Math.sin(Ecc) * bPx;
@@ -196,10 +212,14 @@ function keplerSolve(M, e) {
    «видимая» полуось обеих комет ≈ орбите Нептуна, поэтому их модельный
    период получался одинаковым (~327 земных лет) — при скорости 1× они
    пролетали дугу заметно быстрее внешних планет («носились»).
-   В v2.6 это исправлено индивидуальными коэффициентами slowFor
-   (Гейла-Боппа ×8, NEOWISE ×12): теперь обе кометы — МЕДЛЕННЫЕ, их
-   угловая скорость у перигелия сопоставима со скоростью Юпитера. */
-const COMET_SLOW = 12;
+   В v2.6 это исправлено индивидуальными коэффициентами slowFor.
+   В v2.8 коэффициенты увеличены (×160 и ×220): раньше «медленной» была
+   только ОБРАТНАЯ ветвь орбиты, а вблизи Солнца комета пролетала всю
+   внутреннюю систему за ~3 секунды при скорости 1× — визуально это и
+   выглядело как «сверхбыстрый бег». Теперь полный оборот занимает
+   ~10.5 ч (Хейл-Боппа) и ~13.5 ч (NEOWISE) реального времени при 1× —
+   кометы заметно медленнее внешних планет на всей дуге, включая перигелий. */
+const COMET_SLOW = 160;
 /* Эквивалент «1 а.е.» в пикселях при текущем экране (из scaleAUtoPx(1)). */
 function auPx() {
   return scaleAUtoPx(1);
@@ -222,7 +242,12 @@ function cometPosition(c) {
      возвращается на исходную точку. */
   const periodDays = cometVisPeriodDays(c);      // модельный период по ВИДИМОЙ орбите (медленный)
   const Mraw = circleAngle(state.simDays, periodDays, c.phase || 0);
-  const Ecc = keplerSolve(((Mraw + Math.PI) % (Math.PI * 2)) - Math.PI, eVis);
+  /* Нормализация средней аномалии в диапазон (−π, +π] без потери знака
+     (см. normalizeAngle): раньше из-за знака оператора % комета
+     отражалась относительно оси перигелия и «телепортировалась» на
+     другую сторону эллипса именно вблизи Солнца — это и выглядело как
+     «сбой / сверхбыстрый рывок». */
+  const Ecc = keplerSolve(normalizeAngle(Mraw), eVis);
   /* rAU — расстояние по МОДЕЛЬНОЙ орбите (сохраняет реальный перигелий
      q = a·(1−e)), поэтому у Солнца комета максимально активна, а вдали —
      тусклое ядро; раньше rAU считался по настоящему эллипсу (r до 709 а.е.),
@@ -388,14 +413,14 @@ const COMETS = [
   {
     name: "Комета Хейла-Боппа", nameEn: "C/1995 O1 Hale-Bopp",
     aAU: 173, ecc: 0.995, periodYr: 7470, perihelionAU: 0.87, aphelionAU: 345,
-    visA: COMET_VIS_A.hb, visEcc: 0.95, omegaDeg: 282, phase: 5.5, slowFor: 8,
+    visA: COMET_VIS_A.hb, visEcc: 0.95, omegaDeg: 282, phase: 5.5, slowFor: 160,
     color: "#d8f0ff", type: "Длиннопериодическая комета (облако Оорта)",
     desc: "Одна из самых наблюдаемых комет XX века (1997 г.): видна невооружённым глазом 18 месяцев, период ~7470 лет, ядро ~60–80 км.",
   },
   {
     name: "Комета NEOWISE", nameEn: "C/2020 F3 (NEOWISE)",
     aAU: 355, ecc: 0.998, periodYr: 6800, perihelionAU: 0.69, aphelionAU: 709,
-    visA: COMET_VIS_A.nw, visEcc: 0.96, omegaDeg: 61, phase: 5.9, slowFor: 12,
+    visA: COMET_VIS_A.nw, visEcc: 0.96, omegaDeg: 61, phase: 5.9, slowFor: 220,
     color: "#e6f4ff", type: "Длиннопериодическая комета",
     desc: "Яркая комета лета 2020 года — первая, видимая с Земли невооружённым глазом с 1997 года. Прошла 0.69 а.е. от Земли, период около 6800 лет.",
   },
@@ -719,7 +744,7 @@ function asteroidEllipsePos(a, cx, cy) {
   const aPx = beltAUtoPx(a.mainAU);
   const bPx = aPx * Math.sqrt(1 - a.ecc * a.ecc);
   const Mraw = circleAngle(state.simDays, a.periodDays, (a.M0 * Math.PI) / 180);
-  const Ecc = keplerSolve(((Mraw + Math.PI) % (Math.PI * 2)) - Math.PI, a.ecc);
+  const Ecc = keplerSolve(normalizeAngle(Mraw), a.ecc);   // нормализация без потери знака
   const rAU = a.mainAU * (1 - a.ecc * Math.cos(Ecc));   // истинное расстояние до Солнца
   const ox = Math.cos(Ecc) * aPx - aPx * a.ecc;
   const oy = Math.sin(Ecc) * bPx;
