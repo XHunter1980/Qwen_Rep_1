@@ -62,26 +62,62 @@ html, body {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 8px;
-  padding: 8px 18px 12px;
+  gap: 6px;
+  padding: 6px 14px 10px;
   background: rgba(13, 17, 33, 0.82);
   border: 1px solid rgba(120, 150, 220, 0.25);
   border-radius: 14px;
   backdrop-filter: blur(8px);
   box-shadow: 0 8px 30px rgba(0,0,0,.5);
   z-index: 10;
-  max-width: 94vw;
+  max-width: min(94vw, 980px);   /* v3.9: ограничиваем ширину — панель аккуратнее */
 }
-/* Тело панели скрывается при сворачивании; кнопка остаётся видимой */
+/* Тело панели скрывается при сворачивании; кнопка остаётся видимой.
+   v3.9 (выравнивание): фиксированная минимальная ширина групп и
+   одинаковые отступы, чтобы блоки не «прыгали» по высоте. */
 .controls-body {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  flex-wrap: wrap;
-  justify-content: center;
+  display: grid;
+  grid-template-columns: auto 1fr;   /* левая колонка: кнопки+слайдеры | правая: переключатели */
+  align-items: start;
+  gap: 8px 18px;
   transition: opacity .18s ease;
 }
 .controls.collapsed .controls-body { display: none; }
+/* Левый блок (кнопки + слайдеры) — вертикальная колонка, элементы в строку */
+.ctrl-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ctrl-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.controls-body .ctrl-btn { min-width: 118px; }
+.speed-block, .zoom-block {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.speed-block label, .zoom-block label { white-space: nowrap; }
+.toggle-block {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(170px, 1fr));  /* две ровные колонки */
+  align-content: start;
+  gap: 5px 14px;
+}
+.toggle-block label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;      /* чекбокс и подпись всегда в одну строку */
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.toggle-block input[type="checkbox"] { flex: 0 0 auto; }
+.toggle-block .chip-btn { justify-self: start; }
+@media (max-width: 900px) {           /* узкий экран — одна колонка без наложений */
+  .controls-body { grid-template-columns: 1fr; }
+  .toggle-block { grid-template-columns: 1fr; }
+}
 .panel-collapse {
   align-self: flex-end;
   padding: 3px 10px;

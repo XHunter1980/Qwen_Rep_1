@@ -22,11 +22,15 @@
     <div class="controls" role="group" aria-label="Управление симуляцией">
       <button id="btnCollapsePanel" class="panel-collapse" title="Свернуть/развернуть панель (H)">▾ Свернуть</button>
       <div class="controls-body" id="controlsBody">
+      <!-- v3.9: панель выровнена в две ровные колонки (левая — кнопки и слайдеры, правая — переключатели) -->
+      <div class="ctrl-group">
+      <div class="ctrl-row">
       <button id="btnPlayPause" class="ctrl-btn primary" title="Воспроизведение / Пауза (Пробел)">
         ⏸ Пауза
       </button>
       <button id="btnReset" class="ctrl-btn" title="Сбросить время и выбор">⟲ Сброс</button>
       <button id="btnOrbitMode" class="ctrl-btn" title="Переключить режим орбит (O)">◯ Упрощённые орбиты</button>
+      </div><!-- /ctrl-row -->
       <div class="speed-block">
         <!-- Скорость в РАЗАХ ОТ РЕАЛЬНОЙ, логарифмическая шкала 0.05× … 1000× -->
         <label for="speedSlider">Скорость:&nbsp;<span id="speedLabel">0.05×</span></label>
@@ -53,6 +57,7 @@
           <button data-zoom="8">🔍 8×</button>
         </div>
       </div>
+      </div><!-- /ctrl-group -->
 
       <div class="toggle-block">
         <label><input type="checkbox" id="chkOrbits" checked /> Орбиты</label>
@@ -62,7 +67,7 @@
         <label><input type="checkbox" id="chkComets" checked title="Медленные длиннопериодические кометы Гейла-Боппа и NEOWISE на вытянутых эллиптических орбитах с хвостами (C)" /> ☄️ Кометы</label>
         <label><input type="checkbox" id="chkAliens" checked title="Случайные визиты инопланетных кораблей: НЛО пролетает через систему, облётывая Солнце (U — вкл/выкл слой)" /> 👽 Инопланетяне</label>
         <button id="btnAlienCall" class="chip-btn" title="Пригласить гостя прямо сейчас">🛸 Позвать гостя</button>
-        <label><input type="checkbox" id="chkScale" /> Реальные размеры (спутники — по линейной шкале диаметров)</label>
+        <label title="Спутники — по линейной шкале диаметров"><input type="checkbox" id="chkScale" /> 🔬 Реальные размеры</label>
         <button id="btnMusic" class="chip-btn" title="Фоновая космическая музыка генерируется в браузере, файлов нет (P)">🎵 Космическая музыка</button>
       </div>
       </div><!-- /controls-body -->
