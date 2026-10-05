@@ -8,7 +8,7 @@
 
 /* Версия сборки — ТОЛЬКО номер, без описаний (по требованию).
    Видна в заголовке вкладки, в шапке страницы и в консоли. */
-const VERSION = "v3.6";
+const VERSION = "v3.7";
 document.title = `Солнечная система ${VERSION}`;
 console.log(`%c☀️ Солнечная система — сборка: ${VERSION}`, "color:#ffd75e;font-weight:bold");
 /* Бейдж версии в шапке страницы */
@@ -39,6 +39,17 @@ const EARTH_YEAR_SECONDS = 20;   // земной год ≈ 20 секунд пр
 const TILT = 0.42;               // «наклон» плоскости эклиптики: круги выглядят эллипсами
 let W = 0, H = 0;                // размеры холста (обновляются при resize)
 
+/* ---------- Центр Солнца на экране ----------
+   В v3.7 добавлено панорамирование: карту можно таскать мышкой («сцепившись»
+   за фон) и стрелками клавиатуры. Все расчёты позиций тел идут ОТ СОЛНЦА,
+   поэтому вместо W/2, H/2 используется sunX()/sunY(). При смещении центра
+   за допустимые пределы availPx() уменьшается — тела не залезают под панель
+   управления и край экрана. */
+const PAN_MAX_X = () => Math.min(W * 0.35, 420);   // горизонтальный предел сдвига
+const PAN_MAX_Y = () => Math.min(H * 0.28, 260);   // вертикальный предел сдвига
+function sunX() { return W / 2 + state.panX; }
+function sunY() { return H / 2 + state.panY; }
+
 /* Состояние демонстрации: воспроизведение, скорость, слои, выбор/наведение */
 const state = {
   playing: true,
@@ -53,6 +64,8 @@ const state = {
   showBelt: true,
   showComets: true,
   zoom: 1,                       // масштаб вида (0.6× … 8×), колесо мыши / слайдер
+  panX: 0, panY: 0,              // панорамирование: смещение центра системы (px)
+  music: false,                  // фоновая космическая музыка (WebAudio, без файлов)
   selected: null,
   hovered: null,
 };
@@ -71,8 +84,15 @@ const AU_MAX = 30.05;                                  // орбита Непт�
    подробнее, а Нептун упирается в ~90% доступного радиуса. */
 const AU_REF = 18;                                     // «условная граница» шкалы, а.е.
 function availPx() {
-  // полуширина / «глубина» эллипсов под размер окна
-  return Math.min(W / 2 - 46, (H / 2 - 34) / TILT);
+  /* Полуширина / «глубина» эллипсов под размер окна.
+     С учётом панорамирования (v3.7): берётся минимальное расстояние от
+     смещённого центра Солнца до краёв экрана — иначе при сдвиге карты
+     дальние орбиты залезали бы за границу. */
+  const left  = sunX() - 46;
+  const right = W - 46 - sunX();
+  const up    = (sunY() - 96) / TILT;      // сверху панель управления
+  const down  = (H - 40 - sunY()) / TILT;  // снизу сноска/миникарта
+  return Math.max(60, Math.min(left, right, up, down));
 }
 function scaleAUtoPx(aAU) {
   const norm = Math.pow(AU_REF / AU_MAX, SCALE_POW);  // поправка нормировки
@@ -109,7 +129,7 @@ function normalizeAngle(a) {
 function planetPosition(p) {
   if (state.orbitMode === "circle") {
     const rPx = scaleAUtoPx(p.orbitAU);
-    const pt = circleScreenPoint(W / 2, H / 2, rPx,
+    const pt = circleScreenPoint(sunX(), sunY(), rPx,
       circleAngle(state.simDays, p.periodDays, p.phase0), TILT);
     return { x: pt.x, y: pt.y, rAU: p.orbitAU };
   }
@@ -129,7 +149,7 @@ function planetPosition(p) {
   const w = (p.omegaDeg * Math.PI) / 180;       // ориентация эллипса на плоскости
   const rx = ox * Math.cos(w) - oy * Math.sin(w);
   const ry = (ox * Math.sin(w) + oy * Math.cos(w)) * TILT;
-  return { x: W / 2 + rx, y: H / 2 + ry, rAU };
+  return { x: sunX() + rx, y: sunY() + ry, rAU };
 }
 
 /* Глубина тела: знак «за Солнцем» определяется ИСТИННЫМ расстоянием rAU
@@ -140,14 +160,14 @@ function planetPosition(p) {
    находится «перед» ним. Теперь это невозможно: у Солнца (rAU < 1 а.е.)
    тело всегда считается «за» диском, на окраине системы — «перед». */
 function depthSortKey(rAU, y) {
-  const behind = rAU <= 1.0 || y >= H / 2;
+  const behind = rAU <= 1.0 || y >= sunY();
   return behind ? -rAU : rAU;
 }
 
 /* Вспомогательная: «за» ли тело Солнцем — единый критерий для всей отрисовки
    (слои back/front, экранирование диском). Согласован с depthSortKey. */
 function isBehindSun(rAU, y) {
-  return rAU <= 1.0 || y >= H / 2;
+  return rAU <= 1.0 || y >= sunY();
 }
 
 /* Экранное расстояние планеты от центра (для попаданий и подписей) */
@@ -175,9 +195,17 @@ function planetScreenRadius(p) {
 const BODY_LOG_BASE_KM = 100;    // «нуль» единой шкалы диаметров
 const BODY_LOG_UNIT_PX = 1.55;   // px на ln(diam / 100 км)
 const BODY_MIN_PX = 1.2;         // нижняя граница различимости точки
+/* BIG_BOOST (v3.7): Юпитер, Сатурн и Солнце просили сделать покрупнее.
+   Множитель действует только на тела крупнее 40 000 км (газовые гиганты
+   и Солнце), поэтому порядок «планета ↔ планета» и мелкие тела не ломаются:
+   Солнце 14.8→25 px, Юпитер 11.2→19 px, Сатурн 10.9→18.5 px; Земля/Марс/
+   Луны без изменений. Коэффициент непрерывен на границе (ln(40000/100)=5.99). */
+const BIG_BOOST_FROM_KM = 40000;
+const BIG_BOOST = 1.68;
 function bodyRealPx(diameterKm) {
   const v = Math.log(Math.max(diameterKm, 1) / BODY_LOG_BASE_KM);
-  return Math.max(BODY_MIN_PX, v * BODY_LOG_UNIT_PX);
+  const boost = diameterKm > BIG_BOOST_FROM_KM ? BIG_BOOST : 1;
+  return Math.max(BODY_MIN_PX, v * BODY_LOG_UNIT_PX * boost);
 }
 
 /* РЕАЛИСТИЧНЫЕ РАЗМЕРЫ СПУТНИКОВ (исправление v3.6).
@@ -366,7 +394,7 @@ function cometPosition(c) {
   const w = (c.omegaDeg * Math.PI) / 180;
   const rx = ox * Math.cos(w) - oy * Math.sin(w);
   const ry = (ox * Math.sin(w) + oy * Math.cos(w)) * TILT;
-  const rawX = W / 2 + rx, rawY = H / 2 + ry;
+  const rawX = sunX() + rx, rawY = sunY() + ry;
 
   /* Сглаживание позиции (v3.0). Экспоненциальный фильтр первого порядка:
      даже если источник движения даст неидеально равномерный прирост
@@ -388,7 +416,7 @@ function cometPosition(c) {
 /* Позиция астероида главного пояса: круговая орбита (пояс близок к круговому) */
 function asteroidPosition(a) {
   const rPx = beltAUtoPx(a.mainAU);
-  return circleScreenPoint(W / 2, H / 2, rPx,
+  return circleScreenPoint(sunX(), sunY(), rPx,
     circleAngle(state.simDays, a.periodDays, (a.M0 * Math.PI) / 180), TILT);
 }
 
@@ -414,6 +442,9 @@ for (let i = 0; i < 260; i++) {
     r: Math.random() * 1.3 + 0.3,
     tw: Math.random() * Math.PI * 2,          // фаза мерцания
     sp: 0.4 + Math.random() * 1.6,            // скорость мерцания
+    /* Слой параллакса (v3.7): при панорамировании карты звёзды разных
+       «глубин» смещаются слабее/сильнее — создаётся ощущение объёма. */
+    par: 0.03 + Math.random() * 0.09,         // доля смещения камеры
   });
 }
 
@@ -431,7 +462,10 @@ function drawBackground(timeSec) {
     ctx.globalAlpha = a;
     ctx.fillStyle = "#dfe7ff";
     ctx.beginPath();
-    ctx.arc(s.x * W, s.y * H, s.r, 0, Math.PI * 2);
+    // параллакс: сдвиг пропорционален panX/Y и глубине звезды; wrap по экрану
+    let sx = (s.x * W - state.panX * s.par) % W; if (sx < 0) sx += W;
+    let sy = (s.y * H - state.panY * s.par) % H; if (sy < 0) sy += H;
+    ctx.arc(sx, sy, s.r, 0, Math.PI * 2);
     ctx.fill();
   }
   ctx.globalAlpha = 1;
@@ -450,13 +484,13 @@ function drawOrbits() {
     const aPx = scaleAUtoPx(p.orbitAU);
     if (state.orbitMode === "circle") {
       ctx.beginPath();
-      ctx.ellipse(W / 2, H / 2, aPx, aPx * TILT, 0, 0, Math.PI * 2);
+      ctx.ellipse(sunX(), sunY(), aPx, aPx * TILT, 0, 0, Math.PI * 2);
       ctx.stroke();
     } else {
       const bPx = aPx * Math.sqrt(1 - p.ecc * p.ecc);
       const w = (p.omegaDeg * Math.PI) / 180;
       ctx.save();
-      ctx.translate(W / 2, H / 2);
+      ctx.translate(sunX(), sunY());
       ctx.rotate(w);
       // центр эллипса смещён от фокуса (Солнца) на −a·e по оси перигелия
       ctx.beginPath();
@@ -472,7 +506,7 @@ function drawOrbits() {
 let sunScreenR = 34;   // текущий экранный радиус диска Солнца (для перекрытия тел)
 
 function drawSun(timeSec) {
-  const cx = W / 2, cy = H / 2;
+  const cx = sunX(), cy = sunY();
   const pulse = 1 + 0.05 * Math.sin(timeSec * 1.7);
   /* В режиме реальных размеров Солнце получает тот же ЛОГАРИФМИЧЕСКИЙ
      масштаб, что планеты (по диаметру 1 391 000 км → ≈14 px): оно остаётся
@@ -560,7 +594,7 @@ function drawCometOrbits() {
     const bPx = aPx * Math.sqrt(1 - eVis * eVis);
     const w = (c.omegaDeg * Math.PI) / 180;
     ctx.save();
-    ctx.translate(W / 2, H / 2);
+    ctx.translate(sunX(), sunY());
     ctx.rotate(w);
     ctx.scale(1, TILT);
     ctx.beginPath();
@@ -576,7 +610,7 @@ function drawCometOrbits() {
    ДО диска Солнца; "front" — перед Солнцем, после планет. */
 function drawComets(timeSec, layer) {
   if (!state.showComets) return;
-  const cx = W / 2, cy = H / 2;
+  const cx = sunX(), cy = sunY();
   for (const c of COMETS) {
     const pos = cometPosition(c);                 // rAU — истинное расстояние по эллипсу Кеплера
     c._screen = { x: pos.x, y: pos.y, r: Math.max(2.6, 8) };
@@ -697,7 +731,7 @@ function drawComets(timeSec, layer) {
 */
 const SUN = {
   name: "Солнце",
-  drawR: 34,
+  drawR: 46,
   realRel: 109.2, // радиус Солнца ≈ 109 радиусов Земли
   color: "#ffcf5c",
 };
@@ -754,7 +788,7 @@ const PLANETS = [
     name: "Юпитер", nameEn: "Jupiter",
     orbitAU: 5.2, periodDays: 4333, diameterKm: 139820,
     ecc: 0.049, periAU: 4.951, aphelionAU: 5.449,
-        drawR: 20, realRel: 11.2,
+        drawR: 26, realRel: 11.2,
     color: "#d9a066", shades: ["#eec79a", "#cf9460", "#9a6a40"],
     moons: 95, type: "Газовый гигант",
     desc: "Крупнейшая планета: в неё поместились бы 1300 Земель. Большое красное пятно — шторм больше Земли, бушующий столетиями.",
@@ -769,7 +803,7 @@ const PLANETS = [
     name: "Сатурн", nameEn: "Saturn",
     orbitAU: 9.58, periodDays: 10759, diameterKm: 116460,
     ecc: 0.057, periAU: 9.041, aphelionAU: 10.118,
-        drawR: 17, realRel: 9.45, hasRings: true,
+        drawR: 23, realRel: 9.45, hasRings: true,
     color: "#e3cf9d", shades: ["#f3e4bd", "#dcc48c", "#ab9260"],
     moons: 146, type: "Газовый гигант",
     desc: "Знаменит кольцами из льда и камней шириной ~280 000 км и толщиной всего десятки метров. Планета легче воды.",
@@ -905,7 +939,7 @@ function asteroidEllipsePos(a, cx, cy) {
    Тело, попавшее под диск Солнца на дальней половине, экранируется им. */
 function drawBelt(timeSec, layer) {
   if (!state.showBelt) return;
-  const cx = W / 2, cy = H / 2;
+  const cx = sunX(), cy = sunY();
   ctx.save();
   /* Фоновые камни пояса: движутся по упрощённым круговым орбитам */
   for (const rock of beltRocks) {
@@ -1010,7 +1044,7 @@ function drawPlanet(p, timeSec, layer) {
   if ((layer === "back") !== behind) return;
   /* Зашедшая за Солнце планета скрывается его изображением: если центр
      планеты на дальней половине попал под диск Солнца — не рисуем вовсе. */
-  if (behind && Math.hypot(pos.x - W / 2, pos.y - H / 2) < sunScreenR + R * 0.35) return;
+  if (behind && Math.hypot(pos.x - sunX(), pos.y - sunY()) < sunScreenR + R * 0.35) return;
 
   const isSel = state.selected === p;
   const isHov = state.hovered === p;
@@ -1031,7 +1065,7 @@ function drawPlanet(p, timeSec, layer) {
   if (p.hasRings) drawRings(p, pos, R, "back");
 
   // тень падения света (от Солнца)
-  const sunDir = Math.atan2(pos.y - H / 2, pos.x - W / 2);
+  const sunDir = Math.atan2(pos.y - sunY(), pos.x - sunX());
   const gx = pos.x - Math.cos(sunDir) * R * 0.45;
   const gy = pos.y - Math.sin(sunDir) * R * 0.45;
   const g = ctx.createRadialGradient(gx, gy, R * 0.15, pos.x, pos.y, R * 1.15);
@@ -1101,7 +1135,7 @@ function drawMoon(planet, moon, pos, R, highlight) {
   ctx.restore();
 
   // диск луны с подсветкой со стороны планеты/Солнца
-  const sunDir = Math.atan2(pos.y - H / 2, pos.x - W / 2);
+  const sunDir = Math.atan2(pos.y - sunY(), pos.x - sunX());
   const gx = mp.x - Math.cos(sunDir) * mp.r * 0.4;
   const gy = mp.y - Math.sin(sunDir) * mp.r * 0.4;
   const g = ctx.createRadialGradient(gx, gy, mp.r * 0.15, mp.x, mp.y, mp.r * 1.15);
@@ -1207,7 +1241,7 @@ function startAlienVisit(nowSec, force = false) {
 
 /* Позиция корабля по прогрессу визита (прямое вхождение → дуга → уход). */
 function alienPosition(a, nowSec) {
-  const cx = W / 2, cy = H / 2;
+  const cx = sunX(), cy = sunY();
   const s = (nowSec - a.t0) * a.speed;   // пройденный путь, px
   if (s <= 0 || s >= a.totalDur * a.speed) return null; // до старта / после конца
   let x, y;
@@ -1384,9 +1418,9 @@ function frame(now) {
      scale(zoom) вокруг центра экрана. Клик/наведение пересчитываются
      обратно через toWorld(). */
   ctx.save();
-  ctx.translate(W / 2, H / 2);
+  ctx.translate(sunX(), sunY());
   ctx.scale(state.zoom, state.zoom);
-  ctx.translate(-W / 2, -H / 2);
+  ctx.translate(-sunX(), -sunY());
   drawOrbits();                          // орбиты планет: эллипсы Кеплера или упрощённые круги
   drawCometOrbits();                     // эллиптические орбиты комет (пунктир)
   /* Дальний слой: тела «за» Солнцем — их перекроет диск Солнца */
@@ -1394,18 +1428,99 @@ function frame(now) {
   for (const p of PLANETS) drawPlanet(p, timeSec, "back");
   drawComets(timeSec, "back");           // кометы за Солнцем
   const alienPosNow = alienState.active ? alienPosition(alienState.active, timeSec) : null;
-  if (alienPosNow && alienPosNow.y < H / 2) drawAlien(timeSec);  // НЛО за Солнцем
+  if (alienPosNow && alienPosNow.y < sunY()) drawAlien(timeSec);  // НЛО за Солнцем
   drawSun(timeSec);                      // Солнце поверх дальних тел
   /* Ближний слой: тела «перед» Солнцем */
   for (const p of PLANETS) drawPlanet(p, timeSec, "front");
   drawBelt(timeSec, "front");            // ближняя половина пояса
   drawComets(timeSec, "front");          // кометы перед Солнцем: ядро + кома + хвост
-  if (alienPosNow && alienPosNow.y >= H / 2) drawAlien(timeSec); // НЛО перед Солнцем
+  if (alienPosNow && alienPosNow.y >= sunY()) drawAlien(timeSec); // НЛО перед Солнцем
   ctx.restore();
+
+  drawMinimap();                         // миникарта: положение системы в Млечном Пути (вне зума)
 
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
+
+/* ---------- Миникарта «Млечный Путь» (правый нижний угол) ----------
+   Показывает Галактику-спираль и точку с Солнечной системой на рукаве
+   Ориона, примерно на 2/3 расстояния от центра. Точка чуть «дышит»
+   вдоль своего участка рукава — движение за кадр времени незаметно,
+   но заметно, что система не статична. */
+const minimapCanvas = document.getElementById("minimap");
+const mctx = minimapCanvas ? minimapCanvas.getContext("2d") : null;
+let mmStars = [];
+
+function initMinimap() {
+  if (!minimapCanvas) return;
+  const dpr = window.devicePixelRatio || 1;
+  minimapCanvas.width = Math.round(150 * dpr);
+  minimapCanvas.height = Math.round(150 * dpr);
+  mctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  // фоновые дальние звёзды вокруг галактики — генерируются один раз
+  mmStars = [];
+  for (let i = 0; i < 26; i++) {
+    mmStars.push({ x: Math.random() * 150, y: Math.random() * 150, r: Math.random() * 0.8 + 0.3 });
+  }
+}
+
+function drawMinimap() {
+  if (!mctx) return;
+  const S = 150, cx = S / 2, cy = S / 2;
+  mctx.clearRect(0, 0, S, S);
+  mctx.fillStyle = "rgba(4, 6, 14, 0.92)";
+  mctx.fillRect(0, 0, S, S);
+  for (const s of mmStars) {
+    mctx.globalAlpha = 0.5;
+    mctx.fillStyle = "#cfd9ff";
+    mctx.beginPath(); mctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); mctx.fill();
+  }
+  mctx.globalAlpha = 1;
+
+  // спираль Млечного Пути: два рукава, рисуных точками
+  mctx.save();
+  mctx.translate(cx, cy);
+  for (let arm = 0; arm < 2; arm++) {
+    for (let i = 0; i < 60; i++) {
+      const t = i / 60;                       // 0..1 вдоль рукава
+      const ang = arm * Math.PI + t * 4.6;    // накрутка ~0.75 оборота
+      const rad = 6 + t * 58;
+      const a = 0.10 + 0.28 * (1 - t);        // к краю галактика тоньше
+      mctx.fillStyle = `rgba(${arm ? "150,170,255" : "255,205,150"}, ${a})`;
+      mctx.beginPath();
+      mctx.arc(Math.cos(ang) * rad, Math.sin(ang) * rad * 0.82, 2.4 - t * 1.2, 0, Math.PI * 2);
+      mctx.fill();
+    }
+  }
+  // ядро галактики
+  const core = mctx.createRadialGradient(0, 0, 0, 0, 0, 16);
+  core.addColorStop(0, "rgba(255, 235, 190, 0.85)");
+  core.addColorStop(1, "rgba(255, 210, 140, 0)");
+  mctx.fillStyle = core;
+  mctx.beginPath(); mctx.arc(0, 0, 16, 0, Math.PI * 2); mctx.fill();
+
+  // Солнечная система: на рукаве (~2/3 радиуса), лёгкое «дыхательное» смещение
+  const tSun = 0.66 + 0.015 * Math.sin(performance.now() / 1600);
+  const sunAng = tSun * 4.6;                  // тот же закон накрутки, что у первого рукава
+  const sunRad = 6 + tSun * 58;
+  const sx = Math.cos(sunAng) * sunRad, sy = Math.sin(sunAng) * sunRad * 0.82;
+  mctx.strokeStyle = "rgba(255, 215, 106, 0.75)";
+  mctx.lineWidth = 1;
+  mctx.beginPath(); mctx.arc(sx, sy, 5.5, 0, Math.PI * 2); mctx.stroke();
+  mctx.fillStyle = "#ffd75e";
+  mctx.beginPath(); mctx.arc(sx, sy, 2.2, 0, Math.PI * 2); mctx.fill();
+  mctx.restore();
+
+  // подписи
+  mctx.fillStyle = "rgba(200, 215, 250, 0.85)";
+  mctx.font = "600 9px 'Segoe UI', sans-serif";
+  mctx.textAlign = "left";
+  mctx.fillText("Млечный Путь", 7, 12);
+  mctx.fillStyle = "rgba(255, 225, 150, 0.9)";
+  mctx.fillText("☉ мы здесь", 7, S - 8);
+}
+initMinimap();
 
 /* ---------- Попадание курсора по планете / луне ---------- */
 function pickPlanet(mx, my) {
@@ -1561,7 +1676,10 @@ const tooltip = document.getElementById("tooltip");
    текущего масштаба вида (state.zoom). Центр масштабирования — экранная
    середина; без этого клики и наведение «мимо» промахивались бы при zoom≠1. */
 function toWorld(mx, my) {
-  return { x: (mx - W / 2) / state.zoom + W / 2, y: (my - H / 2) / state.zoom + H / 2 };
+  /* Центр масштабирования — текущий экран центр Солнца (sunX/sunY),
+     поэтому клик/наведение остаются точными при любом зуме и панорамировании. */
+  const sx = sunX(), sy = sunY();
+  return { x: (mx - sx) / state.zoom + sx, y: (my - sy) / state.zoom + sy };
 }
 
 canvas.addEventListener("mousemove", (e) => {
@@ -1592,7 +1710,55 @@ canvas.addEventListener("mouseleave", () => {
   tooltip.classList.add("hidden");
 });
 
+/* ---------- Панорамирование карты («сцепиться мышкой и тащить») ----------
+   mousedown по фону (не по телу) захватывает камеру; движение с зажатой
+   кнопкой сдвигает state.panX/panY в пределах PAN_MAX_*. Клик по телю не
+   превращается в перетаскивание: он засчитывается только если курсор не
+   успел сместиться больше чем на DRAG_THRESHOLD px (иначе это drag). */
+const DRAG_THRESHOLD = 5;         // px — грань между «клик» и «перетаскивание»
+let dragging = false;             // активно ли панорамирование сейчас
+let dragMoved = false;            // был ли за этот захват реальный сдвиг
+let dragStartX = 0, dragStartY = 0;
+
+function clampPan() {
+  state.panX = Math.max(-PAN_MAX_X(), Math.min(PAN_MAX_X(), state.panX));
+  state.panY = Math.max(-PAN_MAX_Y(), Math.min(PAN_MAX_Y(), state.panY));
+}
+
+canvas.addEventListener("mousedown", (e) => {
+  if (e.button !== 0) return;
+  const wpt = toWorld(e.clientX, e.clientY);
+  if (pickAny(wpt.x, wpt.y)) return;   // нажатие по телу — не тянем карту
+  dragging = true;
+  dragMoved = false;
+  dragStartX = e.clientX;
+  dragStartY = e.clientY;
+  canvas.classList.add("grabbing");
+});
+
+window.addEventListener("mousemove", (e) => {
+  if (!dragging) return;
+  const dx = e.clientX - dragStartX;
+  const dy = e.clientY - dragStartY;
+  if (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD) dragMoved = true;
+  if (dragMoved) {
+    /* Карта следует ЗА курсором: куда тянем — туда и центр системы.
+       Делим на zoom, чтобы при приближении темп перетаскивания ощущался естественно. */
+    state.panX += e.movementX / state.zoom;
+    state.panY += e.movementY / state.zoom;
+    clampPan();
+  }
+});
+
+window.addEventListener("mouseup", () => {
+  if (!dragging) return;
+  dragging = false;
+  canvas.classList.remove("grabbing");
+  setTimeout(() => { dragMoved = false; }, 0);   // сброс после обработки click
+});
+
 canvas.addEventListener("click", (e) => {
+  if (dragMoved) return;                 // это был drag карты, а не клик по объекту
   const wpt = toWorld(e.clientX, e.clientY);
   const hit = pickAny(wpt.x, wpt.y);
   if (hit && hit.alien) showAlienInfo(hit.alien);
@@ -1614,16 +1780,57 @@ canvas.addEventListener("wheel", (e) => {
   }
 }, { passive: false });
 
-/* Тач-поддержка */
+/* Тач-поддержка: одиночный тап — выбор тела; одиночное ведение по фону —
+   панорамирование карты (как мышиный drag); щипок двумя пальцами — зум. */
+let touchMode = null;          // "tap" | "pan" | "pinch"
+let touchLastX = 0, touchLastY = 0;
+let pinchDist0 = 0, pinchZoom0 = 1;
+
 canvas.addEventListener("touchstart", (e) => {
+  if (e.touches.length === 2) {
+    // начало щипка: запоминаем базовое расстояние и текущий зум
+    touchMode = "pinch";
+    const [a, b] = e.touches;
+    pinchDist0 = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) || 1;
+    pinchZoom0 = state.zoom;
+    return;
+  }
   const t = e.touches[0];
+  touchLastX = t.clientX;
+  touchLastY = t.clientY;
   const wpt = toWorld(t.clientX, t.clientY);
   const hit = pickAny(wpt.x, wpt.y);
-  if (hit && hit.alien) { showAlienInfo(hit.alien); e.preventDefault(); }
-  else if (hit && hit.comet) { showInfo(null, null, null, hit.comet); e.preventDefault(); }
-  else if (hit && hit.asteroid) { showInfo(null, null, hit.asteroid); e.preventDefault(); }
-  else if (hit) { showInfo(hit.planet, hit.moon); e.preventDefault(); }
-}, { passive: true });
+  if (hit) {
+    touchMode = "tap";                 // палец на теле — это выбор, не перетаскивание
+    if (hit.alien) showAlienInfo(hit.alien);
+    else if (hit.comet) showInfo(null, null, null, hit.comet);
+    else if (hit.asteroid) showInfo(null, null, hit.asteroid);
+    else showInfo(hit.planet, hit.moon);
+    e.preventDefault();
+  } else {
+    touchMode = "pan";                 // палец по фону — тянем карту
+  }
+}, { passive: false });
+
+canvas.addEventListener("touchmove", (e) => {
+  if (touchMode === "pinch" && e.touches.length === 2) {
+    const [a, b] = e.touches;
+    const d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) || 1;
+    setZoom(pinchZoom0 * d / pinchDist0);
+    e.preventDefault();
+    return;
+  }
+  if (touchMode !== "pan") return;
+  const t = e.touches[0];
+  state.panX += (t.clientX - touchLastX) / state.zoom;
+  state.panY += (t.clientY - touchLastY) / state.zoom;
+  clampPan();
+  touchLastX = t.clientX;
+  touchLastY = t.clientY;
+  e.preventDefault();                  // палец тянет карту — страница не скроллится
+}, { passive: false });
+
+canvas.addEventListener("touchend", () => { touchMode = null; });
 
 /* ---------- Управление: воспроизведение / пауза / скорость / масштаб ---------- */
 const btnPlayPause = document.getElementById("btnPlayPause");
@@ -1677,9 +1884,144 @@ btnReset.addEventListener("click", () => {
   state.simDays = 0;
   setSpeed(0.05);   // стартовая скорость: 0.05× от реальной
   setZoom(1);       // и возврат масштаба к обзору всей системы
+  state.panX = 0; state.panY = 0;   // карта — обратно в центр экрана
   state.playing = true;
   updatePlayButton();
   hideInfo();
+});
+
+/* ---------- Космическая музыка (WebAudio, генеративная, без файлов) ----------
+   Медленный «эмбиент»: басовый дрон (два расстроенных осциллятора),
+   дрейфующие минорные аккорды-пэдды с длинной реверберацией-задержкой
+   и редкие высокие «звёздные» блики. Всё синтезируется на лету, поэтому
+   демо остаётся одним комплектом файлов и работает по file://. */
+let musicNodes = null;
+
+function startMusic() {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  const ac = new AC();
+  const master = ac.createGain();
+  master.gain.value = 0.0;
+  master.connect(ac.destination);
+  master.gain.linearRampToValueAtTime(0.22, ac.currentTime + 3); // плавный вход
+
+  // общий «космический» тембр: лёгкий тремор громкости
+  const lfo = ac.createOscillator();
+  const lfoGain = ac.createGain();
+  lfo.frequency.value = 0.07; lfoGain.gain.value = 0.05;
+  lfo.connect(lfoGain).connect(master.gain);
+  lfo.start();
+
+  // басовый дрон: два несильно расстроенных saw-осциллятора через низкий фильтр
+  const droneFilter = ac.createBiquadFilter();
+  droneFilter.type = "lowpass"; droneFilter.frequency.value = 220;
+  const droneGain = ac.createGain(); droneGain.gain.value = 0.16;
+  droneFilter.connect(droneGain).connect(master);
+  const d1 = ac.createOscillator(), d2 = ac.createOscillator();
+  d1.type = "sawtooth"; d2.type = "sawtooth";
+  d1.frequency.value = 55;    // A1
+  d2.frequency.value = 55 * 1.005; // slight beat frequency
+  d1.connect(droneFilter); d2.connect(droneFilter);
+  d1.start(); d2.start();
+
+  /* Пэдд: периоды переключения аккордов из ля-минорного лада.
+     Аккорды (частоты нот) подбираются «на слух» эмбиента: Am, F, G, Em. */
+  const CHORDS = [
+    [220.0, 261.63, 329.63],   // A3 C4 E4  (Am)
+    [174.61, 220.0, 261.63],   // F3 A3 C4  (F)
+    [196.0, 246.94, 293.66],   // G3 B3 D4  (G)
+    [164.81, 196.0, 246.94],   // E3 G3 B3  (Em)
+  ];
+  const padGain = ac.createGain(); padGain.gain.value = 0.0;
+  const padFilter = ac.createBiquadFilter();
+  padFilter.type = "lowpass"; padFilter.frequency.value = 900;
+  padFilter.connect(padGain).connect(master);
+  const padOscs = [0, 1, 2].map(() => {
+    const o = ac.createOscillator();
+    o.type = "triangle";
+    o.connect(padFilter);
+    o.start();
+    return o;
+  });
+
+  // эхо (имитация реверберации большого зала-космоса)
+  const echo = ac.createDelay(2.0);
+  echo.delayTime.value = 0.55;
+  const echoFb = ac.createGain(); echoFb.gain.value = 0.35;
+  const echoWet = ac.createGain(); echoWet.gain.value = 0.5;
+  padGain.connect(echo); echo.connect(echoFb).connect(echo);
+  echo.connect(echoWet).connect(master);
+
+  let chordIdx = 0;
+  function retunePad() {
+    if (!musicNodes) return;
+    const ch = CHORDS[chordIdx % CHORDS.length]; chordIdx++;
+    const t = ac.currentTime;
+    padOscs.forEach((o, i) => {
+      o.frequency.cancelScheduledValues(t);
+      o.frequency.setValueAtTime(o.frequency.value, t);
+      o.frequency.linearRampToValueAtTime(ch[i], t + 4);   // медленный перелив
+    });
+    padGain.gain.cancelScheduledValues(t);
+    padGain.gain.setValueAtTime(padGain.gain.value, t);
+    padGain.gain.linearRampToValueAtTime(0.11, t + 5);     // аккорд «дышит»
+    setTimeout(retunePad, 9000 + Math.random() * 4000);
+  }
+  retunePad();
+
+  // редкие «звёздные блики»: высокий короткий тон где-то раз в 6–14 с
+  function twinkle() {
+    if (!musicNodes) return;
+    const o = ac.createOscillator(), g = ac.createGain();
+    const notes = [523.25, 659.25, 783.99, 880, 1046.5];   // C5 E5 G5 A5 C6
+    o.type = "sine";
+    o.frequency.value = notes[Math.floor(Math.random() * notes.length)];
+    const t = ac.currentTime;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.05, t + 0.05);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 2.2);
+    o.connect(g).connect(master);
+    o.start(t); o.stop(t + 2.4);
+    setTimeout(twinkle, 6000 + Math.random() * 8000);
+  }
+  twinkle();
+
+  musicNodes = { ac, master, extras: [lfo, d1, d2, ...padOscs] };
+}
+
+function stopMusic() {
+  if (!musicNodes) return;
+  const { ac, master, extras } = musicNodes;
+  musicNodes = null;                       // остановит запланированные циклы
+  try {
+    master.gain.linearRampToValueAtTime(0.0, ac.currentTime + 1.2);
+    setTimeout(() => { extras.forEach(o => { try { o.stop(); } catch (_) {} }); ac.close(); }, 1400);
+  } catch (_) {}
+}
+
+function toggleMusic(force) {
+  state.music = typeof force === "boolean" ? force : !state.music;
+  const btn = document.getElementById("btnMusic");
+  if (btn) btn.textContent = state.music ? "🔇 Музыка" : "🎵 Космическая музыка";
+  if (state.music) startMusic(); else stopMusic();
+}
+
+document.getElementById("btnMusic").addEventListener("click", () => toggleMusic());
+
+/* ---------- Сворачивание панели управления ---------- */
+const controlsEl = document.querySelector(".controls");
+const btnCollapse = document.getElementById("btnCollapsePanel");
+
+function setPanelCollapsed(collapsed) {
+  controlsEl.classList.toggle("collapsed", collapsed);
+  btnCollapse.textContent = collapsed ? "▸ Управление" : "▾ Свернуть";
+  btnCollapse.title = collapsed
+    ? "Развернуть панель управления (H)"
+    : "Свернуть панель управления (H)";
+}
+btnCollapse.addEventListener("click", () => {
+  setPanelCollapsed(!controlsEl.classList.contains("collapsed"));
 });
 
 /* ---------- Переключатель режима орбит: эллипсы Кеплера / упрощённые круги ---------- */
@@ -1788,6 +2130,25 @@ window.addEventListener("keydown", (e) => {
     setZoom(state.zoom / 1.2);
   } else if (e.key === "]") {
     setZoom(state.zoom * 1.2);
+  } else if (e.key === "ArrowLeft" || e.key === "ArrowRight" ||
+             e.key === "ArrowUp"   || e.key === "ArrowDown") {
+    /* Стрелки — панорамирование карты (шаг масштабируется зумом,
+       чтобы на 8× темп движения ощущался так же, как на 1×). */
+    e.preventDefault();
+    const step = 40 / state.zoom;
+    if (e.key === "ArrowLeft")  state.panX += step;   // «смотрим левее»
+    if (e.key === "ArrowRight") state.panX -= step;
+    if (e.key === "ArrowUp")    state.panY += step;
+    if (e.key === "ArrowDown")  state.panY -= step;
+    clampPan();
+  } else if ((e.key === "p" || e.key === "P" || e.key === "з" || e.key === "З") &&
+             !e.ctrlKey && !e.metaKey && !e.altKey) {
+    toggleMusic();   // космическая музыка вкл/выкл
+  } else if ((e.key === "h" || e.key === "H" || e.key === "р" || e.key === "Р") &&
+             !e.ctrlKey && !e.metaKey && !e.altKey) {
+    setPanelCollapsed(!controlsEl.classList.contains("collapsed"));  // панель свери/развери
+  } else if (e.key === "Home") {
+    state.panX = 0; state.panY = 0; setZoom(1);   // домой: центр + обзор
   }
 });
 

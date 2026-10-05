@@ -15,11 +15,13 @@
     <!-- Верхняя панель -->
     <header class="topbar">
       <h1>☀️ Солнечная система <span id="versionBadge" class="version-badge" title="Версия сборки — если её нет или она старая, вы открыли не тот архив"></span></h1>
-      <p class="hint">Нажмите на планету, луну, астероид или комету, чтобы узнать о нём больше · Горячие клавиши: Пробел, O, C, M, B, U · Скорость и масштаб: колесо мыши / слайдеры</p>
+      <p class="hint">Клик — сведения о теле · Тяните мышкой/стрелками — двигать карту · Колесо — масштаб · Клавиши: Пробел, O, C, M, B, U, P (музыка), Home · Слайдеры скорости и масштаба</p>
     </header>
 
-    <!-- Панель управления -->
+    <!-- Панель управления (сворачивается кнопкой «▾» или клавишей H) -->
     <div class="controls" role="group" aria-label="Управление симуляцией">
+      <button id="btnCollapsePanel" class="panel-collapse" title="Свернуть/развернуть панель (H)">▾ Свернуть</button>
+      <div class="controls-body" id="controlsBody">
       <button id="btnPlayPause" class="ctrl-btn primary" title="Воспроизведение / Пауза (Пробел)">
         ⏸ Пауза
       </button>
@@ -60,8 +62,10 @@
         <label><input type="checkbox" id="chkComets" checked title="Медленные длиннопериодические кометы Гейла-Боппа и NEOWISE на вытянутых эллиптических орбитах с хвостами (C)" /> ☄️ Кометы</label>
         <label><input type="checkbox" id="chkAliens" checked title="Случайные визиты инопланетных кораблей: НЛО пролетает через систему, облётывая Солнце (U — вкл/выкл слой)" /> 👽 Инопланетяне</label>
         <button id="btnAlienCall" class="chip-btn" title="Пригласить гостя прямо сейчас">🛸 Позвать гостя</button>
-        <label><input type="checkbox" id="chkScale" /> Реальные размеры (спутники — по своей логарифмической шкале диаметров)</label>
+        <label><input type="checkbox" id="chkScale" /> Реальные размеры (спутники — по линейной шкале диаметров)</label>
+        <button id="btnMusic" class="chip-btn" title="Фоновая космическая музыка генерируется в браузере, файлов нет (P)">🎵 Космическая музыка</button>
       </div>
+      </div><!-- /controls-body -->
     </div>
 
     <!-- Всплывающее уведомление о визите НЛО -->
@@ -84,6 +88,11 @@
 
     <!-- Подсказка при наведении -->
     <div id="tooltip" class="tooltip hidden"></div>
+
+    <!-- Миникарта: положение Солнечной системы в Млечном Пути -->
+    <div class="minimap-wrap" title="Где наша система находится в Галактике">
+      <canvas id="minimap" width="150" height="150"></canvas>
+    </div>
 
     <footer class="footnote" id="footnote"></footer>
   </div>
