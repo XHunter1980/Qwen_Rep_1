@@ -8,7 +8,7 @@
 
 /* Версия сборки — ТОЛЬКО номер, без описаний (по требованию).
    Видна в заголовке вкладки, в шапке страницы и в консоли. */
-const VERSION = "v3.3";
+const VERSION = "v3.4";
 document.title = `Солнечная система ${VERSION}`;
 console.log(`%c☀️ Солнечная система — сборка: ${VERSION}`, "color:#ffd75e;font-weight:bold");
 /* Бейдж версии в шапке страницы */
@@ -170,6 +170,31 @@ function bodyRealPx(diameterKm) {
   return Math.max(1.4, v * LOG_UNIT_PX);
 }
 
+/* РЕАЛИСТИЧНЫЕ РАЗМЕРЫ СПУТНИКОВ.
+   Раньше луны наследовали планетную логарифмическую шкалу, у которой
+   «нуль» находится на отметке 3000 км — из-за этого ВСЕ спутники меньше
+   Земли (Луна 3479 км, Фобос 22 км) упирались в floor и выглядели
+   одинаковыми точками, а порядок размеров терялся. Для лун введена
+   СВОЯ шкала: «единица» 500 км, шаг MOON_LOG_UNIT_PX на натуральный
+   логарифм диаметра + базовая прибавка за читаемость. Честный линейный
+   масштаб (diam ∝ px) сделал бы Луну невидимой точкой при Земле 2.4 px,
+   поэтому логарифм здесь — осознанный компромисс: монотонность по
+   реальному диаметру строгая (проверено для всех 13 лун), различие
+   крайних тел ~2×. Итог в режиме «Реальные размеры»:
+   Фобос/Деймос ≈ 1.2–1.5 px (точки) < Япет < Рея/Титания/Оберон <
+   Тритон < Европа < Луна ≈ Ио < Каллисто < Титан < Ганимед ≈ 4.1 px. */
+const MOON_LOG_BASE_KM = 500;   // «единица» шкалы диаметров спутников
+const MOON_LOG_UNIT_PX = 1.6;   // px на ln(diam / 500 км)
+const MOON_READABLE_PX = 1.2;   // нижняя граница различимости точки
+function moonSizePx(moon, planetScreenR) {
+  if (!state.realScale) {
+    /* Условный режим: размер относительно планеты, порядок соблюдён. */
+    return Math.max(1.4, planetScreenR * (moon.relR || 0.1) * 0.5);
+  }
+  const diaKm = Math.max(1, Math.round((moon.relR || 0.1) * 12742));
+  return Math.max(MOON_READABLE_PX, Math.log(diaKm / MOON_LOG_BASE_KM) * MOON_LOG_UNIT_PX + 1.2);
+}
+
 /* Общее правило для ВСЕХ слоёв режима реальных размеров: орбиты
    растягиваются множителем, чтобы тела не слипались в одну точку.
    Используется планетами (через scaleAUtoPx), лунами и поясом. */
@@ -187,9 +212,9 @@ const REAL_ORBIT_STRETCH = 3;
       в плоскости экватора;
    3) минимальный зазор от поверхности планеты, чтобы луна не рисовалась
       внутри диска планеты. */
-const MOON_LOG_UNIT_PX = 4.2;               // px на ln(dist/10 000 км)
+const MOON_DIST_LOG_UNIT_PX = 4.2;          // px на ln(dist/10 000 км) — шкала РАДИУСОВ орбит лун
 function moonOrbitPx(distKm) {
-  return Math.max(7, Math.log(Math.max(distKm, 1) / 10000) * MOON_LOG_UNIT_PX);
+  return Math.max(7, Math.log(Math.max(distKm, 1) / 10000) * MOON_DIST_LOG_UNIT_PX);
 }
 function moonPosition(planet, moon, pos, R) {
   const ang = circleAngle(state.simDays, moon.periodDays, moon.phase0 || 0);
@@ -205,11 +230,15 @@ function moonPosition(planet, moon, pos, R) {
   const inclEff = Math.min(moon.incl || 0, 180 - (moon.incl || 0));
   const squash = Math.max(0.12, Math.cos(inclEff * Math.PI / 180));
   const ex = Math.cos(ang) * orbR, ey = Math.sin(ang) * orbR * squash;
+  /* РЕАЛИСТИЧНЫЙ РАЗМЕР СПУТНИКА: в режиме «Реальные размеры» — по
+     отдельной логарифмической шкале диаметров (moonSizePx), в обычном —
+     условный размер относительно планеты с сохранением порядка величин
+     (Фобос/Деймос заметно меньше Луны, Ганимед/Титан — самые крупные). */
+  const r = moonSizePx(moon, R);
   return {
     x: pos.x + ex * Math.cos(node) - ey * Math.sin(node),
     y: pos.y + ex * Math.sin(node) + ey * Math.cos(node),
-    r: Math.max(1.4, bodyRealPx(Math.round(moon.relR * 12742))),
-    orbR, squash, node,
+    r, orbR, squash, node,
   };
 }
 
@@ -1635,7 +1664,7 @@ const btnOrbitMode = document.getElementById("btnOrbitMode");
 
 function updateOrbitModeButton() {
   const isEllipse = state.orbitMode === "ellipse";
-  btnOrbitMode.textContent = isEllipse ? "◯ Упрощённые круги" : "🪐 Эллипсы Кеплера";
+  btnOrbitMode.textContent = isEllipse ? "◯ Упрощённые орбиты" : "🪐 Эллипсы Кеплера";
   btnOrbitMode.title = isEllipse
     ? "Переключить на упрощённые круговые орбиты (O)"
     : "Переключить на реальные эллиптические орбиты с Солнцем в фокусе (O)";
