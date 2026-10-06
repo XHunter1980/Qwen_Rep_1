@@ -8,7 +8,7 @@
 
 /* Версия сборки — ТОЛЬКО номер, без описаний (по требованию).
    Видна в заголовке вкладки, в шапке страницы и в консоли. */
-const VERSION = "v5.0";
+const VERSION = "v6.0";
 document.title = `Солнечная система ${VERSION}`;
 console.log(`%c☀️ Солнечная система — сборка: ${VERSION}`, "color:#ffd75e;font-weight:bold");
 /* Версия сборки: бейдж в заголовке панели управления + сноска внизу по центру */
@@ -1482,84 +1482,179 @@ function frame(now) {
 /* requestAnimationFrame запускается после инициализации миникарты (см. конец файла) —
    иначе первый же кадр обращается к mctx до его объявления (TDZ-ошибка). */
 
-/* ---------- Миникарта «Млечный Путь» (правый нижний угол) ----------
-   Показывает Галактику-спираль и точку с Солнечной системой на рукаве
-   Ориона, примерно на 2/3 расстояния от центра. Точка чуть «дышит»
-   вдоль своего участка рукава — движение за кадр времени незаметно,
-   но заметно, что система не статична. */
+/* ---------- v6.0: миникарта «Млечный Путь» — ДЕТАЛИЗИРОВАННАЯ (230 px) ----------
+   Собирается ОДИН раз в offscreen-canvas (дорого — только при старте),
+   затем каждый кадр просто blit'ится + поверх рисуются пульсация точки
+   «мы здесь» и подписи. Что добавлено по сравнению с v5.0:
+   • 4 основных рукава (Скормового/Персея, Стрельца, Щита-Центавра,
+     трёхрукавье) + рукав Ориона, в котором сидит Солнечная система;
+   • тысячи звёздных зёрен вдоль логарифмических спиралей (плотность
+     убывает к краю), розовые HII-области звездообразования, голубые
+     скопления молодых звёзд, пылевые тёмные полосы;
+   • балдж (эллиптическое утолщение) с шапкой старых красных звёзд;
+   • гало из далёких шаровых скоплений;
+   • подпись рукава Ориона и указатель на Солнечную систему. */
+const MM_S = 230;                              // логический размер миникарты, px
 const minimapCanvas = document.getElementById("minimap");
 const mctx = minimapCanvas ? minimapCanvas.getContext("2d") : null;
-let mmStars = [];
+let mmBase = null;                             // собранный кадр галактики
 
-function initMinimap() {
+// псевдослучайные числа с фиксированным seed — картинка стабильна между кадрами
+function mmRnd(seed) { let s = seed >>> 0; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; }
+
+function buildMinimap() {
   if (!minimapCanvas) return;
   const dpr = window.devicePixelRatio || 1;
-  minimapCanvas.width = Math.round(150 * dpr);
-  minimapCanvas.height = Math.round(150 * dpr);
+  minimapCanvas.width = Math.round(MM_S * dpr);
+  minimapCanvas.height = Math.round(MM_S * dpr);
   mctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  // фоновые дальние звёзды вокруг галактики — генерируются один раз
-  mmStars = [];
-  for (let i = 0; i < 26; i++) {
-    mmStars.push({ x: Math.random() * 150, y: Math.random() * 150, r: Math.random() * 0.8 + 0.3 });
+
+  mmBase = document.createElement("canvas");
+  mmBase.width = Math.round(MM_S * dpr);
+  mmBase.height = Math.round(MM_S * dpr);
+  const b = mmBase.getContext("2d");
+  b.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const rnd = mmRnd(20261006);
+  const cx = MM_S / 2, cy = MM_S / 2;
+
+  // фон глубокого космоса
+  b.fillStyle = "rgba(4, 6, 14, 0.96)";
+  b.fillRect(0, 0, MM_S, MM_S);
+
+  // масштаб галактики относительно размера карточки (150 px -> K=1)
+  const K = MM_S / 150;
+
+  // далёкие фоновые звёзды (гало + случайные)
+  for (let i = 0; i < 200; i++) {
+    const x = rnd() * MM_S, y = rnd() * MM_S;
+    b.globalAlpha = 0.15 + rnd() * 0.5;
+    b.fillStyle = rnd() > 0.8 ? "#ffd9b0" : "#cfd9ff";
+    b.beginPath(); b.arc(x, y, (0.25 + rnd() * 0.7) * K, 0, Math.PI * 2); b.fill();
   }
+  b.globalAlpha = 1;
+
+  b.save();
+  b.translate(cx, cy);
+  const FLAT = 0.78;                           // наклон диска (почти «с ребра»)
+
+  function spiralPt(t, phase, wind) {          // логарифмическая спираль
+    const ang = phase + t * wind;
+    const rad = (7 + t * 57) * K;
+    return [Math.cos(ang) * rad, Math.sin(ang) * rad * FLAT];
+  }
+
+  // 4 основных рукава + ориентировочный рукав Ориона (между 2/3 и центром)
+  const ARMS = [
+    { phase: 0.0,  color: [150, 175, 255], grains: 1700 },
+    { phase: Math.PI,       color: [150, 175, 255], grains: 1700 },
+    { phase: Math.PI / 2,   color: [255, 205, 150], grains: 1500 },
+    { phase: -Math.PI / 2,  color: [255, 205, 150], grains: 1500 },
+    { phase: 2.35, color: [210, 230, 255], grains: 800, orion: true },
+  ];
+  for (const arm of ARMS) {
+    const wind = 5.2;
+    for (let i = 0; i < arm.grains; i++) {
+      const t = Math.pow(rnd(), 0.65);         // плотнее к центру
+      const spread = (rnd() - 0.5) * (0.16 + 0.1 * t); // разброс звёздной «пыли»
+      const [x0, y0] = spiralPt(Math.min(1, t + spread), arm.phase, wind);
+      const jitter = (rnd() - 0.5) * 2.2 * K;
+      const x = x0 + jitter, y = y0 + (rnd() - 0.5) * 2.2 * K;
+      const fade = 0.05 + 0.3 * (1 - t);
+      b.fillStyle = `rgba(${arm.color[0]},${arm.color[1]},${arm.color[2]},${fade})`;
+      b.beginPath(); b.arc(x, y, (0.35 + rnd() * (1.1 - t * 0.5)) * K, 0, Math.PI * 2); b.fill();
+    }
+    // светящийся газ рукава — мягкие пятна
+    for (let i = 0; i < 40; i++) {
+      const t = 0.1 + rnd() * 0.9;
+      const [x, y] = spiralPt(t, arm.phase, wind);
+      const rr = (3.2 - t) * K;
+      const g = b.createRadialGradient(x, y, 0, x, y, rr);
+      g.addColorStop(0, `rgba(${arm.color[0]},${arm.color[1]},${arm.color[2]},0.1)`);
+      g.addColorStop(1, "rgba(0,0,0,0)");
+      b.fillStyle = g;
+      b.beginPath(); b.arc(x, y, rr, 0, Math.PI * 2); b.fill();
+    }
+    // HII-области звездообразования (розовинка) и молодые скопления (голубое)
+    for (let i = 0; i < 24; i++) {
+      const t = 0.18 + rnd() * 0.78;
+      const [x, y] = spiralPt(t, arm.phase, wind);
+      b.fillStyle = rnd() > 0.5 ? "rgba(255,120,160,0.22)" : "rgba(160,200,255,0.3)";
+      b.beginPath(); b.arc(x + (rnd()-0.5)*2*K, y + (rnd()-0.5)*2*K, (0.5 + rnd() * 0.9) * K, 0, Math.PI * 2); b.fill();
+    }
+    // тёмные пылевые полосы вдоль внутренних витков
+    for (let i = 0; i < 16; i++) {
+      const t = 0.12 + rnd() * 0.4;
+      const [x, y] = spiralPt(t, arm.phase + 0.08, wind);
+      b.fillStyle = "rgba(5,4,10,0.5)";
+      b.beginPath(); b.ellipse(x, y, (2.4 + rnd()*2)*K, 0.7*K, Math.atan2(y,x), 0, Math.PI*2); b.fill();
+    }
+  }
+
+  // балдж: эллиптическое утолщение из старых жёлто-красных звёзд
+  const bulge = b.createRadialGradient(0, 0, 0, 0, 0, 20 * K);
+  bulge.addColorStop(0, "rgba(255,225,160,0.95)");
+  bulge.addColorStop(0.35, "rgba(255,190,120,0.45)");
+  bulge.addColorStop(1, "rgba(255,170,100,0)");
+  b.fillStyle = bulge;
+  b.beginPath(); b.ellipse(0, 0, 20 * K, 20 * FLAT * K, 0, 0, Math.PI * 2); b.fill();
+  for (let i = 0; i < 520; i++) {
+    const rr = Math.pow(rnd(), 1.6) * 13 * K, aa = rnd() * Math.PI * 2;
+    b.fillStyle = `rgba(255,${190 + rnd()*40 | 0},${120 + rnd()*60 | 0},${0.12 + rnd()*0.3})`;
+    b.beginPath(); b.arc(Math.cos(aa)*rr, Math.sin(aa)*rr*FLAT, (0.3 + rnd()*0.6)*K, 0, Math.PI*2); b.fill();
+  }
+  // активное ядро (стрельце A*)
+  b.fillStyle = "rgba(255,245,220,0.95)";
+  b.beginPath(); b.arc(0, 0, 1.6 * K, 0, Math.PI * 2); b.fill();
+
+  // шаровые скопления гало
+  for (let i = 0; i < 34; i++) {
+    const rr = (30 + rnd() * 40) * K, aa = rnd() * Math.PI * 2;
+    const x = Math.cos(aa) * rr, y = Math.sin(aa) * rr * 0.95;
+    b.fillStyle = "rgba(220,225,255,0.16)";
+    b.beginPath(); b.arc(x, y, (1.1 + rnd()) * K, 0, Math.PI * 2); b.fill();
+    b.fillStyle = "rgba(240,240,255,0.5)";
+    b.beginPath(); b.arc(x, y, 0.4 * K, 0, Math.PI * 2); b.fill();
+  }
+  b.restore();
+  b.globalAlpha = 1;
 }
 
 function drawMinimap() {
-  if (!mctx) return;
-  const S = 150, cx = S / 2, cy = S / 2;
-  mctx.clearRect(0, 0, S, S);
-  mctx.fillStyle = "rgba(4, 6, 14, 0.92)";
-  mctx.fillRect(0, 0, S, S);
-  for (const s of mmStars) {
-    mctx.globalAlpha = 0.5;
-    mctx.fillStyle = "#cfd9ff";
-    mctx.beginPath(); mctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); mctx.fill();
-  }
-  mctx.globalAlpha = 1;
+  if (!mctx || !mmBase) return;
+  mctx.clearRect(0, 0, MM_S, MM_S);
+  mctx.drawImage(mmBase, 0, 0, MM_S, MM_S);   // быстрый blit готовой картинки
 
-  // спираль Млечного Пути: два рукава, рисуных точками
-  mctx.save();
-  mctx.translate(cx, cy);
-  for (let arm = 0; arm < 2; arm++) {
-    for (let i = 0; i < 60; i++) {
-      const t = i / 60;                       // 0..1 вдоль рукава
-      const ang = arm * Math.PI + t * 4.6;    // накрутка ~0.75 оборота
-      const rad = 6 + t * 58;
-      const a = 0.10 + 0.28 * (1 - t);        // к краю галактика тоньше
-      mctx.fillStyle = `rgba(${arm ? "150,170,255" : "255,205,150"}, ${a})`;
-      mctx.beginPath();
-      mctx.arc(Math.cos(ang) * rad, Math.sin(ang) * rad * 0.82, 2.4 - t * 1.2, 0, Math.PI * 2);
-      mctx.fill();
-    }
-  }
-  // ядро галактики
-  const core = mctx.createRadialGradient(0, 0, 0, 0, 0, 16);
-  core.addColorStop(0, "rgba(255, 235, 190, 0.85)");
-  core.addColorStop(1, "rgba(255, 210, 140, 0)");
-  mctx.fillStyle = core;
-  mctx.beginPath(); mctx.arc(0, 0, 16, 0, Math.PI * 2); mctx.fill();
-
-  // Солнечная система: на рукаве (~2/3 радиуса), лёгкое «дыхательное» смещение
-  const tSun = 0.66 + 0.015 * Math.sin(performance.now() / 1600);
-  const sunAng = tSun * 4.6;                  // тот же закон накрутки, что у первого рукава
-  const sunRad = 6 + tSun * 58;
-  const sx = Math.cos(sunAng) * sunRad, sy = Math.sin(sunAng) * sunRad * 0.82;
-  mctx.strokeStyle = "rgba(255, 215, 106, 0.75)";
+  // Солнечная система: на рукаве Ориона (~t=0.62), лёгкое «дыхание» вдоль него
+  const K = MM_S / 150;
+  const cx = MM_S / 2, cy = MM_S / 2, FLAT = 0.78;
+  const tSun = 0.62 + 0.012 * Math.sin(performance.now() / 1600);
+  const ang = 2.35 + tSun * 5.2;
+  const rad = (7 + tSun * 57) * K;
+  const sx = cx + Math.cos(ang) * rad, sy = cy + Math.sin(ang) * rad * FLAT;
+  const pulse = (4.6 + Math.sin(performance.now() / 480) * 1.2) * K;
+  mctx.strokeStyle = "rgba(255, 215, 106, 0.8)";
   mctx.lineWidth = 1;
-  mctx.beginPath(); mctx.arc(sx, sy, 5.5, 0, Math.PI * 2); mctx.stroke();
+  mctx.beginPath(); mctx.arc(sx, sy, pulse, 0, Math.PI * 2); mctx.stroke();
   mctx.fillStyle = "#ffd75e";
-  mctx.beginPath(); mctx.arc(sx, sy, 2.2, 0, Math.PI * 2); mctx.fill();
-  mctx.restore();
+  mctx.beginPath(); mctx.arc(sx, sy, 2.1 * K, 0, Math.PI * 2); mctx.fill();
+  // выноска к точке + подпись
+  mctx.strokeStyle = "rgba(255,215,106,0.5)";
+  mctx.beginPath(); mctx.moveTo(sx + 3*K, sy + 3*K); mctx.lineTo(sx + 12*K, sy + 14*K); mctx.stroke();
+  mctx.fillStyle = "rgba(255,225,150,0.95)";
+  mctx.font = `600 ${Math.round(8 * K)}px 'Segoe UI', sans-serif`;
+  mctx.textAlign = "left";
+  mctx.fillText("☉ Солнечная система", sx + 6 * K, sy + 22 * K);
 
   // подписи
-  mctx.fillStyle = "rgba(200, 215, 250, 0.85)";
-  mctx.font = "600 9px 'Segoe UI', sans-serif";
-  mctx.textAlign = "left";
-  mctx.fillText("Млечный Путь", 7, 12);
-  mctx.fillStyle = "rgba(255, 225, 150, 0.9)";
-  mctx.fillText("☉ мы здесь", 7, S - 8);
+  mctx.fillStyle = "rgba(200, 215, 250, 0.9)";
+  mctx.font = `700 ${Math.round(9 * K)}px 'Segoe UI', sans-serif`;
+  mctx.fillText("Млечный Путь", 7 * K, 12 * K);
+  mctx.fillStyle = "rgba(170, 190, 235, 0.65)";
+  mctx.font = `italic 600 ${Math.round(7 * K)}px 'Segoe UI', sans-serif`;
+  mctx.fillText("рукав Ориона", 7 * K, 22 * K);
+  mctx.fillText("ядро: Стрелец A*", 7 * K, MM_S - 8 * K);
 }
-initMinimap();
+buildMinimap();
 requestAnimationFrame(frame);   // запуск цикла ПОСЛЕ инициализации миникарты (v3.9: фикс TDZ mctx)
 
 /* ---------- Попадание курсора по планете / луне ---------- */
@@ -1968,46 +2063,45 @@ const NOTE_FREQ = {           // частоты нот (равномерная �
   "A4":440.00,"B4":493.88,"C5":523.25,"D5":587.33,"E5":659.25,"F5":698.46,
   "G5":783.99,"A5":880.00,
   "C#5":554.37,"D#5":622.25,"F#5":739.99,"G#5":830.61,"A#5":932.33,"B5":987.77,
-  "C#6":1108.73,"D6":1174.66,"E6":1318.51,"F2":87.31,"E2":82.41,"F#2":92.50,"G#2":103.83,"B2":123.47
+  "C#6":1108.73,"D6":1174.66,"E6":1318.51,"F2":87.31,"E2":82.41,"F#2":92.50,"G#2":103.83,"B2":123.47,
+  /* v6.0: ноты темы «Крестный отец» (Am): G2 в басу и C6 в кульминации */
+  "G2":98.00,"C6":1046.50
 };
 /* Ряды мелодии под каждую прогрессию (A-минорная и D-фригийская пентатоники) */
 
-/* v5.0: «застывшая» тема в духе Вагнера — «Полёт Валькирий»: медный
-   лейтмотив E–B–E (октавный подпрыгивающий бас, как у Валл-Валл-Валл),
-   скачущие восьмушки струнных и нарастающая кульминация. Это тот самый
-   узнаваемый «космический мотив». Реализация — честная партитура из 4
-   фраз с фиксированными длительностями; импровизации нет. */
+/* v6.0: космический мотив — «Speak Softly Love» («Тема любви») из кинофильма
+   «Крестный отец» (Нино Рота). Тональность Am (как в оригинале), свободный
+   рубато-темп, мягкие triangle-голоса через lowpass + длинное эхо — получается
+   «космическая колыбельная». Партитура фиксированная: импровизации нет, только
+   мелодия + остинатный бас. */
 
-const MUSIC_TEMPO = 0.26;        // сек/восьмая (~115 BPM) — темп марша
-const NOTE_DUR = {               // длительности в долях-восьмых
-  e: 1, q: 2, dq: 3, h: 4, dh: 6, w: 8
+const MUSIC_TEMPO = 0.5;         // сек/четверть (~60 BPM) — медленное вальсирование
+const NOTE_DUR = {               // длительности в четвертях (beat)
+  e: 0.5, eq: 0.75, q: 1, dq: 1.5, h: 2, dh: 3, w: 4, hw: 6
 };
-/* Ноты: [имя, длительность]. Тема ми минор (Эолия) — тональность оригинала. */
-const VF_BASS = [   // остинатное тремоло низких: октавное «Валл-Валл» на тонике
-  ["E2", "e"], ["E3", "e"], ["E2", "e"], ["E3", "e"], ["E2", "q"],
-  ["E2", "e"], ["E3", "e"], ["E2", "e"], ["E3", "e"], ["E2", "q"],
+/* Бас: медленные ступени вниз — Am → Em/G → F → E(дом.) → Am → Dm → E → Am */
+const GODFATHER_BASS = [
+  ["A2","w"],["G2","w"],["F2","w"],["E2","w"],
+  ["A2","w"],["D3","w"],["E2","w"],["A2","w"],
 ];
-/* Фраза A: восходящий маршевый ход темы (B B | E... | D C# | B ...) */
-const VF_THEME_A = [
-  ["B4", "q"], ["E5", "h"], ["D5", "e"], ["C#5", "e"], ["B4", "q"],
-  ["A4", "e"], ["B4", "e"], ["C#5", "q"], ["B4", "h"],
+/* Мелодия пофразно (нота+длительность); паузы переданы нотами "-" (пропуск) */
+const GF_PHRASE_1 = [
+  ["E4","dq"],["A4","h"],["B4","eq"],["C5","q"],["B4","e"],["A4","dq"],
+  ["E4","e"],["C4","w"],
 ];
-/* Фраза B: развитие вверх до G#5 с синкопами */
-const VF_THEME_B = [
-  ["F#5", "q"], ["E5", "e"], ["D5", "e"], ["C#5", "q"], ["B4", "q"],
-  ["C#5", "e"], ["D5", "e"], ["E5", "h"], ["G#5", "w"],
+const GF_PHRASE_2 = [
+  ["D4","dq"],["E4","h"],["A4","eq"],["B4","q"],["A4","e"],["E4","dq"],
+  ["G#4","e"],["A4","w"],
 ];
-/* Фраза C: нагнетание — повторы аккордовых тонов с хроматическим ходом */
-const VF_THEME_C = [
-  ["E5", "e"], ["E5", "e"], ["F#5", "e"], ["F#5", "e"], ["G#5", "q"], ["B5", "q"],
-  ["A5", "e"], ["G#5", "e"], ["F#5", "e"], ["E5", "e"], ["D#5", "q"], ["E5", "q"],
+const GF_PHRASE_3 = [           // припев — восход к кульминации C6
+  ["C5","dq"],["C5","h"],["E5","eq"],["F5","q"],["E5","e"],["C5","dq"],
+  ["A4","e"],["B4","h"],["C6","w"],
 ];
-/* Фраза D: кульминация (B5) и спуск к тонике */
-const VF_THEME_D = [
-  ["B5", "dq"], ["A5", "e"], ["G#5", "h"], ["F#5", "q"], ["E5", "q"],
-  ["F#5", "e"], ["G#5", "e"], ["A5", "q"], ["B5", "q"], ["E5", "w"],
+const GF_PHRASE_4 = [           // кода — спуск и затухание
+  ["C6","dq"],["B4","h"],["A4","eq"],["G4","q"],["E4","e"],["D4","dq"],
+  ["C4","e"],["A3","w"],
 ];
-const VF_MELODY = [VF_THEME_A, VF_THEME_B, VF_THEME_C, VF_THEME_D];
+const GF_MELODY = [GF_PHRASE_1, GF_PHRASE_2, GF_PHRASE_3, GF_PHRASE_4];
 
 function startMusic() {
   if (musicNodes) return;   // v4.8: защита от второго AudioContext (двойной клик по кнопке)
@@ -2091,70 +2185,74 @@ function startMusic() {
   });
 
   /* v5.0: тема «Полёт Валькирий» вместо случайной импровизации — см.
-     партитуру VF_* выше. Планировщик читает фразы по очереди; темп,
+     партитуру GF_* выше. Планировщик читает фразы по очереди; темп,
      длительности и высота нот фиксированы, поэтому мотив узнаваем. */
 
-  /* --- Планировщик тактов: остинатный бас + скачущие восьмушки темы --- */
-  const BEAT = MUSIC_TEMPO * 2;          // сек/четверть (~0.52) — маршевый шаг
-  let phraseIdx = 0;                     // текущая фраза A→B→C→D→A…
-  let nextT = ac.currentTime + 0.3;      // время начала следующей фразы
+  /* --- Планировщик фраз «Крестного отца»: медленный бас + рубато-мелодия --- */
+  let phraseIdx = 0;                     // текущая фраза 1→2→3→4→1…
+  let bassCursor = 0;                    // позиция в GODFATHER_BASS (циклична)
+  let nextT = ac.currentTime + 0.4;      // время начала следующей фразы
 
-  /* один голос темы: sawtooth через lowpass (имитация медных/струнных) */
+  /* один голос: тёплый triangle через lowpass + лёгкая вибрато-атака —
+     «космическая» версия мантованского соло трубы/струнных Нино Рота */
   function playNote(freq, t, durSec, vol, dest, type) {
     const o = ac.createOscillator(), g = ac.createGain();
-    o.type = type || "sawtooth";
+    o.type = type || "triangle";
     o.frequency.value = freq;
     const filt = ac.createBiquadFilter();
-    filt.type = "lowpass"; filt.frequency.value = 1800; filt.Q.value = 0.7;
+    filt.type = "lowpass"; filt.frequency.value = 1400; filt.Q.value = 0.5;
     g.gain.setValueAtTime(0, t);
-    g.gain.linearRampToValueAtTime(vol, t + Math.min(0.04, durSec * 0.3));
-    g.gain.setValueAtTime(vol, t + durSec * 0.75);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + durSec);
+    g.gain.linearRampToValueAtTime(vol, t + Math.min(0.12, durSec * 0.25)); // мягкая атака
+    g.gain.setValueAtTime(vol, t + durSec * 0.6);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + durSec);                // длинный хвост
     o.connect(filt).connect(g).connect(dest);
-    o.start(t); o.stop(t + durSec + 0.05);
+    o.start(t); o.stop(t + durSec + 0.1);
   }
 
   function schedulePhrase() {
     if (!musicNodes) return;
     const t0 = nextT;
-    const theme = VF_MELODY[phraseIdx % VF_MELODY.length];
+    const theme = GF_MELODY[phraseIdx % GF_MELODY.length];
+    const beats = theme.reduce((s, [, d]) => s + NOTE_DUR[d], 0);
+    const phraseLen = beats * MUSIC_TEMPO;
 
-    /* Остинатный бас «Валл-Валл»: тремоло октав E2/E3 на всём протяжении
-       фразы — гармонический фундамент темы (тоника ми минор). */
+    /* Бас: по одной долгой ноте на такт, ступени вниз под мелодию */
     let bassT = t0;
-    const phraseLen = theme.reduce((s, [, d]) => s + NOTE_DUR[d], 0) * MUSIC_TEMPO;
-    while (bassT < t0 + phraseLen - 0.01) {
-      for (const [name, d] of VF_BASS) {
-        if (bassT >= t0 + phraseLen - 0.01) break;
-        playNote(NOTE_FREQ[name], bassT, NOTE_DUR[d] * MUSIC_TEMPO * 0.9,
-                 0.055, echoPad, "triangle");
-        bassT += NOTE_DUR[d] * MUSIC_TEMPO;
-      }
+    while (bassT < t0 + phraseLen - 0.05) {
+      const [name, d] = GODFATHER_BASS[bassCursor % GODFATHER_BASS.length];
+      playNote(NOTE_FREQ[name], bassT, NOTE_DUR[d] * MUSIC_TEMPO * 0.95,
+               0.05, echoPad, "triangle");
+      bassT += NOTE_DUR[d] * MUSIC_TEMPO;
+      bassCursor++;
     }
 
-    /* Тема: фиксированные ноты и длительности (скачущие восьмушки/четверти) */
+    /* Мелодия: фиксированные ноты с небольшим рубато (±4% темпа) — как живое
+       исполнение; "-" означает паузу. Дублируем на октаву ниже очень тихо —
+       эффект объёма («космический зал»). */
     let cur = t0;
     for (const [name, d] of theme) {
-      const dur = NOTE_DUR[d] * MUSIC_TEMPO;
-      playNote(NOTE_FREQ[name], cur, dur * 0.92, 0.075, echoMel, "sawtooth");
-      /* дублируем тему в октаву ниже тише — эффект «медного хора» */
-      playNote(NOTE_FREQ[name] / 2, cur, dur * 0.92, 0.028, echoPad, "sawtooth");
+      const rubato = 1 + (Math.random() - 0.5) * 0.08;
+      const dur = NOTE_DUR[d] * MUSIC_TEMPO * rubato;
+      if (name !== "-") {
+        playNote(NOTE_FREQ[name], cur, dur * 0.94, 0.07, echoMel, "triangle");
+        playNote(NOTE_FREQ[name] / 2, cur, dur * 0.94, 0.02, echoPad, "triangle");
+      }
       cur += dur;
     }
 
     phraseIdx++;
-    nextT += phraseLen + MUSIC_TEMPO * 2;   // короткая цезура между фразами
+    nextT += phraseLen + MUSIC_TEMPO * 1.5;   // цезура между фразами
     setTimeout(schedulePhrase,
       Math.max(30, (nextT - ac.currentTime - phraseLen) * 1000));
   }
 
-  /* редкие верхние «звёздные блики» — в тональности темы (ми минор) */
+  /* редкие верхние «звёздные блики» — в тональности темы (ля минор) */
   function twinkle() {
     if (!musicNodes) return;
-    const notes = ["E5","G5","A5","B5","E6"];
+    const notes = ["A5","C6","E5","G5","A6"];
     bell(NOTE_FREQ[notes[Math.floor(Math.random() * notes.length)]],
-         ac.currentTime + 0.05, 2.0, 0.035, echoMel);
-    setTimeout(twinkle, 7000 + Math.random() * 9000);
+         ac.currentTime + 0.05, 2.4, 0.03, echoMel);
+    setTimeout(twinkle, 9000 + Math.random() * 11000);
   }
 
   /* v4.8: планировщик больше не зависит от «музыка уже зарегистрирована» —
@@ -2186,30 +2284,21 @@ document.getElementById("btnMusic").addEventListener("click", () => toggleMusic(
 
 /* ---------- Сворачивание панели управления ---------- */
 const controlsEl = document.querySelector(".controls");
-/* v5.0: клавиша ▲/▼ — элемент ШАПКИ drawer'а (в index.html, внутри
-   .controls-header). Пользователь просил: «стрелочку ещё чуть выше» и
-   «кнопка должна быть ВНЕ области панели, а не накладываться на неё».
-   В шапке она физически над всеми контролами и никогда их не перекрывает;
-   при свёрнутой панели остаётся видимой (CSS .panel-collapse.always). */
+/* v6.0: клавиша ▲/▼ — постоянная плавающая кнопка НАД панелью (fixed,
+   top:28px). Перенесена из шапки drawer'а на body и получает класс
+   floating ВСЕГДА: раньше она лежала внутри панели и пряталась вместе с
+   ней («стрелочка скрывается вместе с панелью»). Теперь видна в обоих
+   состояниях: ▲ сворачивает, ▼ раскрывает; положение по горизонтали
+   подставляется из JS (по центру drawer'а). */
 let btnCollapse = document.getElementById("btnCollapsePanel");
 if (!btnCollapse) {
   btnCollapse = document.createElement("button");
   btnCollapse.id = "btnCollapsePanel";
-  btnCollapse.className = "panel-collapse always";
-  const ch = document.querySelector(".controls-header");
-  if (ch) ch.appendChild(btnCollapse); else document.body.appendChild(btnCollapse);
+  document.body.appendChild(btnCollapse);
 }
+btnCollapse.className = "panel-collapse floating";
 
-/* v5.0: отдельная плавающая кнопка раскрытия для состояния collapsed —
-   маленькая вкладка у правого края экрана («▼»), видна только когда панель
-   свёрнута. Решает извечную жалобу «при скрытии не видно стрелочки»: её не
-   нужно искать — вкладка прижата к краю и подсвечивается. */
-const btnShowPanel = document.createElement("button");
-btnShowPanel.id = "btnShowPanel";
-btnShowPanel.textContent = "▼";
-btnShowPanel.title = "Показать панель управления (H)";
-document.body.appendChild(btnShowPanel);
-btnShowPanel.addEventListener("click", () => setPanelCollapsed(false));
+// v6.0: отдельная вкладка btnShowPanel удалена — её роль выполняет btnCollapse
 
 /* ---------- v4.8: музыка запускается ТОЛЬКО явным действием пользователя
    (клик по кнопке «🎵 Космическая музыка» или клавиша P). Раньше стояло
@@ -2224,38 +2313,29 @@ btnShowPanel.addEventListener("click", () => setPanelCollapsed(false));
    клик по клавише ◀/▶, клавиша H, кнопка «Скрыть панель» внизу drawer'а.
    Никаких hover-раскрытий и таймеров, которые «съезжали» сами собой. */
 
-/* v4.7: плавающая клавиша ВСЕГДА в режиме floating (fixed у правого края,
-   z-index выше панели). Раньше класс floating добавлялся только при
-   сворачивании, а при открытой панели кнопка лежала внутри drawer'а, где
-   правило `.controls .panel-collapse { display:none }` полностью её скрывало
-   — «кнопка открытия панели не видна». Теперь она видна и кликабельна
-   в любом состоянии: ◀ сворачивает, ▶ раскрывает. */
-/* v5.0: клавиша — ВЫШЕ панели (стрелка ▲ при открытой / ▼ при свёрнутой).
-   Просьбы пользователя: «стрелочку ещё чуть выше» и «кнопка должна быть ВНЕ
-   области панели, а не накладываться на неё». Решение: кнопка НЕ плавающая
-   fixed-накладка, а физический элемент шапки drawer'а (в flex-строке
-   заголовка) — то есть над списком контролов, вне рабочей области панели,
-   никогда её не перекрывает. При сворачивании вместе с панелью прячется;
-   раскрыть можно клавишей H или кнопкой «▼ Панель управления», которая
-   появляется внизу drawer'а в состоянии collapsed (см. index.html). */
-function positionFloatingBtn() { /* v5.0: позиционирование из JS больше не нужно */ }
+/* v6.0: позиционирование плавающей клавиши — по центру drawer'а (по
+   горизонтали), над его верхним краем; при свёрнутой панели остаётся там же
+   (drawer уезжает вправо, а кнопка fixed и никуда не девается). */
+function positionFloatingBtn() {
+  if (!btnCollapse) return;
+  const w = controlsEl ? controlsEl.offsetWidth : 292;
+  btnCollapse.style.right = Math.round(14 + (w - 38) / 2) + "px";
+}
+window.addEventListener("resize", positionFloatingBtn);
 
 function setPanelCollapsed(collapsed) {
   state.panelCollapsed = collapsed;
   controlsEl.classList.toggle("collapsed", collapsed);
-  /* v5.0: направление стрелки — «куда денется панель»: ▲ убирает вверх/за
-     пределы вида, ▼ возвращает на место. Классика collapse-UI. */
+  /* v6.0: направление стрелки — «куда денется панель»: ▲ убирает, ▼ возвращает */
   btnCollapse.textContent = collapsed ? "▼" : "▲";
   btnCollapse.title = collapsed
     ? "Развернуть панель управления (клик по стрелке или клавиша H)"
     : "Свернуть панель управления (клик по стрелке или клавиша H)";
-  /* v5.0: плавающая вкладка «▼» у края экрана — единственный явный способ
-     раскрыть свёрнутую панель мышью; показываем её только в collapsed */
-  btnShowPanel.classList.toggle("visible", collapsed);
+  positionFloatingBtn();
 }
 
-/* v5.0: кнопка «Скрыть панель» внизу drawer'а — альтернативный способ
-   схлопнуть панель, если стрелка в шапке оказалась незаметна */
+/* v6.0: кнопка «Скрыть панель» внизу drawer'а — альтернативный способ
+   схлопнуть панель, если стрелка над ней оказалась незаметна */
 const hideBtn = document.createElement("button");
 hideBtn.id = "btnHidePanel";
 hideBtn.className = "hide-panel-btn";

@@ -16,9 +16,26 @@
     <header class="topbar">
       <h1>☀️ Солнечная система</h1>
       <div class="minimap-wrap" title="Где наша система находится в Галактике">
-        <canvas id="minimap" width="150" height="150"></canvas>
+        <canvas id="minimap" width="230" height="230"></canvas>
       </div>
     </header>
+
+    <!-- v6.0: информационная карточка объектов — СРАЗУ ПОД картой Млечного
+         Пути (в flow topbar'а, а не fixed-накладка). Она физически отделена
+         от панели управления и никогда с ней не пересекается. -->
+    <aside id="infoPanel" class="info-panel hidden" aria-live="polite">
+      <button id="btnCloseInfo" class="close-btn" title="Закрыть">✕</button>
+      <div class="info-planet-icon" id="infoIcon"></div>
+      <h2 id="infoName">—</h2>
+      <ul class="info-list">
+        <li><span class="lbl">Диаметр</span><span class="val" id="infoSize">—</span></li>
+        <li><span class="lbl">Расстояние от Солнца</span><span class="val" id="infoDist">—</span></li>
+        <li><span class="lbl">Орбитальный период</span><span class="val" id="infoPeriod">—</span></li>
+        <li><span class="lbl">Спутники</span><span class="val" id="infoMoons">—</span></li>
+        <li><span class="lbl">Тип</span><span class="val" id="infoType">—</span></li>
+      </ul>
+      <p class="info-desc" id="infoDesc"></p>
+    </aside>
 
     <!-- Панель управления: боковой drawer справа; сворачивается клавишей ◀ или H -->
     <div class="controls" role="group" aria-label="Управление симуляцией">
@@ -91,21 +108,8 @@
 
     <!-- v4.3: легенда управления и всплывающее уведомление об НЛО убраны по запросу -->
 
-    <!-- v5.0: карточка объектов — ВНЕ панели управления, слева внизу;
-         z-index 12 < панели 25, никогда не перекрывает drawer справа -->
-    <aside id="infoPanel" class="info-panel hidden" aria-live="polite">
-      <button id="btnCloseInfo" class="close-btn" title="Закрыть">✕</button>
-      <div class="info-planet-icon" id="infoIcon"></div>
-      <h2 id="infoName">—</h2>
-      <ul class="info-list">
-        <li><span class="lbl">Диаметр</span><span class="val" id="infoSize">—</span></li>
-        <li><span class="lbl">Расстояние от Солнца</span><span class="val" id="infoDist">—</span></li>
-        <li><span class="lbl">Орбитальный период</span><span class="val" id="infoPeriod">—</span></li>
-        <li><span class="lbl">Спутники</span><span class="val" id="infoMoons">—</span></li>
-        <li><span class="lbl">Тип</span><span class="val" id="infoType">—</span></li>
-      </ul>
-      <p class="info-desc" id="infoDesc"></p>
-    </aside>
+    <!-- v6.0: старый fixed-вариант карточки удалён — она переехала в topbar,
+         сразу под карту Млечного Пути (см. начало файла) -->
 
     <!-- Подсказка при наведении -->
     <div id="tooltip" class="tooltip hidden"></div>
