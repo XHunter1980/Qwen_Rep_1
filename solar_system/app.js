@@ -1985,7 +1985,10 @@ function startMusic() {
   const tryResume = () => { try { ac.resume(); } catch (_) {} };
   tryResume();
   setTimeout(tryResume, 120);
-  document.addEventListener("pointerdown", tryResume, { once: true });
+  /* v4.6: НЕ once — если контекст создавался вне пользовательского жеста,
+     он остаётся suspended; слушатель живёт, пока контекст не разблокирован */
+  document.addEventListener("pointerdown", tryResume);
+  document.addEventListener("keydown", tryResume);
   const master = ac.createGain();
   master.gain.value = 0.0;
   master.connect(ac.destination);
