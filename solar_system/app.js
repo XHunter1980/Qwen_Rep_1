@@ -8,13 +8,16 @@
 
 /* Версия сборки — ТОЛЬКО номер, без описаний (по требованию).
    Видна в заголовке вкладки, в шапке страницы и в консоли. */
-const VERSION = "v3.9";
+const VERSION = "v4.0";
 document.title = `Солнечная система ${VERSION}`;
 console.log(`%c☀️ Солнечная система — сборка: ${VERSION}`, "color:#ffd75e;font-weight:bold");
 /* Бейдж версии в шапке страницы */
 {
   const badge = document.getElementById("versionBadge");
   if (badge) badge.textContent = VERSION;
+  /* v4.0: компактный номер версии также в заголовке drawer'а управления */
+  const cver = document.getElementById("controlsVer");
+  if (cver) cver.textContent = VERSION;
 }
 
 /* ---------- Общие вспомогательные функции ---------- */
@@ -1876,10 +1879,10 @@ const btnPlayPause = document.getElementById("btnPlayPause");
 const btnReset     = document.getElementById("btnReset");
 const speedSlider  = document.getElementById("speedSlider");
 const speedLabel   = document.getElementById("speedLabel");
-const presetBtns   = [...document.querySelectorAll(".speed-presets button[data-speed]")];
+const presetBtns   = [...document.querySelectorAll(".presets button[data-speed]")];
 const zoomSlider   = document.getElementById("zoomSlider");
 const zoomLabel    = document.getElementById("zoomLabel");
-const zoomBtns     = [...document.querySelectorAll(".speed-presets button[data-zoom]")];
+const zoomBtns     = [...document.querySelectorAll(".presets button[data-zoom]")];
 
 function updatePlayButton() {
   btnPlayPause.textContent = state.playing ? "⏸ Пауза" : "▶ Играть";
@@ -1936,6 +1939,34 @@ btnReset.addEventListener("click", () => {
    демо остаётся одним комплектом файлов и работает по file://. */
 let musicNodes = null;
 
+/* =========================================================
+   v4.0: мелодичная космическая музыка.
+   Прежняя версия была почти чистым эмбиентом (дрон + редкие
+   случайные ноты). Теперь — полноценная генеративная мелодия:
+   • аккордовая прогрессия Am–F–C–G (классическая «космическая»
+     последовательность), цикл по 8 тактов;
+   • арпеджио перебором (созвучие по очереди, не блокнотом);
+   • медленная солирующая линия из звукового ряда A-минор
+     (пентатоника + плавные шаги), с эхом и лёгкой детерминированной
+     вариативностью — каждый прозвучавший фрагмент чуть уникален;
+   • мягкий бас по тонике аккорда на слабую долю.
+   ========================================================= */
+const NOTE_FREQ = {           // частоты нот (равномерная темперация, Гц)
+  "A2":110.00,"C3":130.81,"D3":146.83,"E3":164.81,"F3":174.61,"G3":196.00,
+  "A3":220.00,"C4":261.63,"D4":293.66,"E4":329.63,"F4":349.23,"G4":392.00,
+  "A4":440.00,"B4":493.88,"C5":523.25,"D5":587.33,"E5":659.25,"F5":698.46,
+  "G5":783.99,"A5":880.00
+};
+/* Прогрессия: тоника баса + ноты аккорда снизу вверх (Am–F–C–G) */
+const PROG = [
+  { bass: "A2", chord: ["A3","C4","E4"] },   // Am
+  { bass: "F3", chord: ["F3","A3","C4"] },   // F
+  { bass: "C3", chord: ["C4","E4","G4"] },   // C
+  { bass: "G3", chord: ["G3","B3","D4"] },   // G (B3 ниже D4 — порядок снизу вверх)
+];
+/* Звуковой ряд для мелодии (A-минорная пентатоника, вверх и вниз) */
+const MELODY_SCALE = ["A4","C5","D5","E5","G5","A5","G5","E5","D5","C5"];
+
 function startMusic() {
   const AC = window.AudioContext || window.webkitAudioContext;
   if (!AC) return;
@@ -1943,40 +1974,44 @@ function startMusic() {
   const master = ac.createGain();
   master.gain.value = 0.0;
   master.connect(ac.destination);
-  master.gain.linearRampToValueAtTime(0.22, ac.currentTime + 3); // плавный вход
+  master.gain.linearRampToValueAtTime(0.2, ac.currentTime + 3); // плавный вход
 
-  // общий «космический» тембр: лёгкий тремор громкости
+  /* общий «космический» тембр: лёгкий тремор громкости */
   const lfo = ac.createOscillator();
   const lfoGain = ac.createGain();
-  lfo.frequency.value = 0.07; lfoGain.gain.value = 0.05;
+  lfo.frequency.value = 0.07; lfoGain.gain.value = 0.04;
   lfo.connect(lfoGain).connect(master.gain);
   lfo.start();
 
-  // басовый дрон: два несильно расстроенных saw-осциллятора через низкий фильтр
-  const droneFilter = ac.createBiquadFilter();
-  droneFilter.type = "lowpass"; droneFilter.frequency.value = 220;
-  const droneGain = ac.createGain(); droneGain.gain.value = 0.16;
-  droneFilter.connect(droneGain).connect(master);
-  const d1 = ac.createOscillator(), d2 = ac.createOscillator();
-  d1.type = "sawtooth"; d2.type = "sawtooth";
-  d1.frequency.value = 55;    // A1
-  d2.frequency.value = 55 * 1.005; // slight beat frequency
-  d1.connect(droneFilter); d2.connect(droneFilter);
-  d1.start(); d2.start();
+  /* эхо — два отклика разной длины (имитация большого зала-космоса) */
+  function makeEcho(delaySec, fb, wet) {
+    const d = ac.createDelay(3.0); d.delayTime.value = delaySec;
+    const f = ac.createGain(); f.gain.value = fb;
+    const w = ac.createGain(); w.gain.value = wet;
+    d.connect(f).connect(d); d.connect(w).connect(master);
+    return d;
+  }
+  const echoPad = makeEcho(0.55, 0.32, 0.45);
+  const echoMel = makeEcho(0.82, 0.38, 0.5);
 
-  /* Пэдд: периоды переключения аккордов из ля-минорного лада.
-     Аккорды (частоты нот) подбираются «на слух» эмбиента: Am, F, G, Em. */
-  const CHORDS = [
-    [220.0, 261.63, 329.63],   // A3 C4 E4  (Am)
-    [174.61, 220.0, 261.63],   // F3 A3 C4  (F)
-    [196.0, 246.94, 293.66],   // G3 B3 D4  (G)
-    [164.81, 196.0, 246.94],   // E3 G3 B3  (Em)
-  ];
-  const padGain = ac.createGain(); padGain.gain.value = 0.0;
+  /* мягкая атака/затухание для «колокольчиков» */
+  function bell(freq, t, dur, vol, dest) {
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = "triangle";
+    o.frequency.value = freq;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(vol, t + Math.min(0.08, dur * 0.2));
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g).connect(dest);
+    o.start(t); o.stop(t + dur + 0.1);
+  }
+
+  /* --- Пэд: три triangle-осциллятора, перестраиваются на аккорд --- */
   const padFilter = ac.createBiquadFilter();
-  padFilter.type = "lowpass"; padFilter.frequency.value = 900;
-  padFilter.connect(padGain).connect(master);
-  const padOscs = [0, 1, 2].map(() => {
+  padFilter.type = "lowpass"; padFilter.frequency.value = 850;
+  const padGain = ac.createGain(); padGain.gain.value = 0.0;
+  padFilter.connect(padGain); padGain.connect(echoPad);
+  const padOscs = [0,1,2].map(() => {
     const o = ac.createOscillator();
     o.type = "triangle";
     o.connect(padFilter);
@@ -1984,49 +2019,92 @@ function startMusic() {
     return o;
   });
 
-  // эхо (имитация реверберации большого зала-космоса)
-  const echo = ac.createDelay(2.0);
-  echo.delayTime.value = 0.55;
-  const echoFb = ac.createGain(); echoFb.gain.value = 0.35;
-  const echoWet = ac.createGain(); echoWet.gain.value = 0.5;
-  padGain.connect(echo); echo.connect(echoFb).connect(echo);
-  echo.connect(echoWet).connect(master);
+  /* --- Планировщик тактов: арпеджио + бас + мелодия --- */
+  const BEAT = 0.85;                 // сек. на долю (темп ~70)
+  let barIdx = 0;                    // номер такта в цикле
+  let nextT = ac.currentTime + 0.2;  // время начала следующего такта
+  let lastScaleStep = 0;             // для плавных шагов мелодии
+  let melodyRestLeft = 0;            // такты молчания солиста
 
-  let chordIdx = 0;
-  function retunePad() {
+  function scheduleBar() {
     if (!musicNodes) return;
-    const ch = CHORDS[chordIdx % CHORDS.length]; chordIdx++;
-    const t = ac.currentTime;
-    padOscs.forEach((o, i) => {
-      o.frequency.cancelScheduledValues(t);
-      o.frequency.setValueAtTime(o.frequency.value, t);
-      o.frequency.linearRampToValueAtTime(ch[i], t + 4);   // медленный перелив
-    });
-    padGain.gain.cancelScheduledValues(t);
-    padGain.gain.setValueAtTime(padGain.gain.value, t);
-    padGain.gain.linearRampToValueAtTime(0.11, t + 5);     // аккорд «дышит»
-    setTimeout(retunePad, 9000 + Math.random() * 4000);
-  }
-  retunePad();
+    const prog = PROG[barIdx % PROG.length];
+    const t0 = nextT;
 
-  // редкие «звёздные блики»: высокий короткий тон где-то раз в 6–14 с
+    /* пэд: плавно перестраиваем осцилляторы на новый аккорд */
+    padOscs.forEach((o, i) => {
+      const target = NOTE_FREQ[prog.chord[i]];
+      o.frequency.cancelScheduledValues(t0);
+      o.frequency.setValueAtTime(o.frequency.value, t0);
+      o.frequency.linearRampToValueAtTime(target, t0 + 1.2);
+    });
+    padGain.gain.cancelScheduledValues(t0);
+    padGain.gain.setValueAtTime(padGain.gain.value, t0);
+    padGain.gain.linearRampToValueAtTime(0.085, t0 + 2.0);
+    padGain.gain.linearRampToValueAtTime(0.05, t0 + BEAT * 4 - 0.4);
+
+    /* арпеджио перебором: нота аккорда каждые полтакта, лесенкой вверх-вниз */
+    const arpPattern = [0, 1, 2, 1];
+    for (let s = 0; s < 4; s++) {
+      const note = prog.chord[arpPattern[s]];
+      const t = t0 + s * BEAT;
+      bell(NOTE_FREQ[note], t, BEAT * 1.4, 0.05, echoPad);
+      /* октавный отзвук тише — добавляет «стеклянности» */
+      bell(NOTE_FREQ[note] * 2, t + 0.02, BEAT * 0.9, 0.018, echoPad);
+    }
+
+    /* мягкий бас на первую долю каждого такта */
+    {
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.type = "sine";
+      o.frequency.value = NOTE_FREQ[prog.bass];
+      g.gain.setValueAtTime(0, t0);
+      g.gain.linearRampToValueAtTime(0.075, t0 + 0.1);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + BEAT * 3.4);
+      o.connect(g).connect(master);
+      o.start(t0); o.stop(t0 + BEAT * 3.6);
+    }
+
+    /* --- мелодия: длинная нота на сильную долю, иногда ответ на слабую --- */
+    if (melodyRestLeft > 0) melodyRestLeft--;
+    else if (Math.random() < 0.72) {
+      /* движение по ряду: чаще соседний шаг (легато), реже прыжок */
+      const step = Math.random() < 0.7
+        ? (Math.random() < 0.5 ? 1 : -1)
+        : (Math.random() < 0.5 ? 2 : -2);
+      lastScaleStep = Math.max(0, Math.min(MELODY_SCALE.length - 1, lastScaleStep + step));
+      const f = NOTE_FREQ[MELODY_SCALE[lastScaleStep]];
+      const when = t0 + (Math.random() < 0.3 ? BEAT * 2 : 0);
+      const len = BEAT * (Math.random() < 0.35 ? 2.6 : 1.6);
+      bell(f, when, len, 0.085, echoMel);
+      /* occasional второй голос терцией ниже — намёк на гармонию */
+      if (Math.random() < 0.3) {
+        const idx2 = Math.max(0, lastScaleStep - 2);
+        bell(NOTE_FREQ[MELODY_SCALE[idx2]], when + 0.06, len * 0.8, 0.03, echoMel);
+      }
+      /* после фразы — пауза, чтобы мелодия «дышала» */
+      if (Math.random() < 0.3) melodyRestLeft = 1 + (Math.random() < 0.4 ? 1 : 0);
+    }
+
+    barIdx++;
+    nextT += BEAT * 4;
+    /* планируем с запасом, но синхронно с реальным временем */
+    setTimeout(scheduleBar, Math.max(30, (nextT - ac.currentTime - BEAT * 4) * 1000));
+  }
+
+  /* редкие верхние «звёздные блики» — теперь в тональности ряда */
   function twinkle() {
     if (!musicNodes) return;
-    const o = ac.createOscillator(), g = ac.createGain();
-    const notes = [523.25, 659.25, 783.99, 880, 1046.5];   // C5 E5 G5 A5 C6
-    o.type = "sine";
-    o.frequency.value = notes[Math.floor(Math.random() * notes.length)];
-    const t = ac.currentTime;
-    g.gain.setValueAtTime(0, t);
-    g.gain.linearRampToValueAtTime(0.05, t + 0.05);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 2.2);
-    o.connect(g).connect(master);
-    o.start(t); o.stop(t + 2.4);
-    setTimeout(twinkle, 6000 + Math.random() * 8000);
+    const notes = ["E5","G5","A5","C5"];
+    bell(NOTE_FREQ[notes[Math.floor(Math.random() * notes.length)]],
+         ac.currentTime + 0.05, 2.0, 0.035, echoMel);
+    setTimeout(twinkle, 7000 + Math.random() * 9000);
   }
+
+  scheduleBar();
   twinkle();
 
-  musicNodes = { ac, master, extras: [lfo, d1, d2, ...padOscs] };
+  musicNodes = { ac, master, extras: [lfo, ...padOscs] };
 }
 
 function stopMusic() {
@@ -2054,7 +2132,8 @@ const btnCollapse = document.getElementById("btnCollapsePanel");
 
 function setPanelCollapsed(collapsed) {
   controlsEl.classList.toggle("collapsed", collapsed);
-  btnCollapse.textContent = collapsed ? "▸ Управление" : "▾ Свернуть";
+  /* v4.0: маленькая круглая клавиша — только стрелка направления */
+  btnCollapse.textContent = collapsed ? "▶" : "◀";
   btnCollapse.title = collapsed
     ? "Развернуть панель управления (H)"
     : "Свернуть панель управления (H)";

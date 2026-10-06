@@ -18,59 +18,72 @@
       <p class="hint">Клик — сведения о теле · Тяните мышкой/стрелками — двигать карту · Колесо — масштаб · Клавиши: Пробел, O, C, M, B, U, P (музыка), Home · Слайдеры скорости и масштаба</p>
     </header>
 
-    <!-- Панель управления (сворачивается кнопкой «▾» или клавишей H) -->
+    <!-- Панель управления: боковой drawer справа; сворачивается клавишей ◀ или H -->
     <div class="controls" role="group" aria-label="Управление симуляцией">
-      <button id="btnCollapsePanel" class="panel-collapse" title="Свернуть/развернуть панель (H)">▾ Свернуть</button>
+      <button id="btnCollapsePanel" class="panel-collapse" title="Свернуть/развернуть панель (H)">◀</button>
+      <div class="controls-header"><span>Управление</span><span id="controlsVer"></span></div>
       <div class="controls-body" id="controlsBody">
-      <!-- v3.9: панель выровнена в две ровные колонки (левая — кнопки и слайдеры, правая — переключатели) -->
-      <div class="ctrl-group">
-      <div class="ctrl-row">
-      <button id="btnPlayPause" class="ctrl-btn primary" title="Воспроизведение / Пауза (Пробел)">
-        ⏸ Пауза
-      </button>
-      <button id="btnReset" class="ctrl-btn" title="Сбросить время и выбор">⟲ Сброс</button>
-      <button id="btnOrbitMode" class="ctrl-btn" title="Переключить режим орбит (O)">◯ Упрощённые орбиты</button>
-      </div><!-- /ctrl-row -->
-      <div class="speed-block">
-        <!-- Скорость в РАЗАХ ОТ РЕАЛЬНОЙ, логарифмическая шкала 0.05× … 1000× -->
-        <label for="speedSlider">Скорость:&nbsp;<span id="speedLabel">0.05×</span></label>
-        <input id="speedSlider" type="range" min="-1.301" max="3" step="0.01" value="-1.301" title="От 0.05× до 1000× (логарифмическая шкала)" />
-        <div class="speed-presets">
-          <button data-speed="0.05">0.05×</button>
-          <button data-speed="0.1">0.1×</button>
-          <button data-speed="1">1×</button>
-          <button data-speed="10">10×</button>
-          <button data-speed="100">100×</button>
-          <button data-speed="1000">1000×</button>
+
+      <!-- Секция «Симуляция» -->
+      <div class="ctrl-section">
+        <div class="ctrl-row">
+          <button id="btnPlayPause" class="ctrl-btn primary" title="Воспроизведение / Пауза (Пробел)">
+            ⏸ Пауза
+          </button>
+          <button id="btnReset" class="ctrl-btn" title="Сбросить время, выбор и вид">⟲ Сброс</button>
+          <button id="btnOrbitMode" class="ctrl-btn" title="Переключить режим орбит (O)">◯ Упрощённые орбиты</button>
         </div>
       </div>
 
-      <div class="zoom-block">
-        <!-- Масштаб вида: от обзора всей системы до крупного плана внутренней части -->
-        <label for="zoomSlider">Масштаб:&nbsp;<span id="zoomLabel">1×</span></label>
-        <input id="zoomSlider" type="range" min="0.6" max="8" step="0.05" value="1" title="Колесо мыши над космосом тоже масштабирует" />
-        <div class="speed-presets">
-          <button data-zoom="0.6">⊜ Обзор</button>
-          <button data-zoom="1">1×</button>
-          <button data-zoom="2">2×</button>
-          <button data-zoom="4">4×</button>
-          <button data-zoom="8">🔍 8×</button>
+      <div class="ctrl-divider"></div>
+
+      <!-- Секция «Темп и вид» -->
+      <div class="ctrl-section">
+        <div class="speed-block">
+          <!-- Скорость в РАЗАХ ОТ РЕАЛЬНОЙ, логарифмическая шкала 0.05× … 1000× -->
+          <label for="speedSlider">Скорость:&nbsp;<span id="speedLabel">0.05×</span></label>
+          <input id="speedSlider" type="range" min="-1.301" max="3" step="0.01" value="-1.301" title="От 0.05× до 1000× (логарифмическая шкала)" />
+          <div class="presets">
+            <button data-speed="0.05">0.05×</button>
+            <button data-speed="0.1">0.1×</button>
+            <button data-speed="1">1×</button>
+            <button data-speed="10">10×</button>
+            <button data-speed="100">100×</button>
+            <button data-speed="1000">1000×</button>
+          </div>
+        </div>
+
+        <div class="zoom-block">
+          <!-- Масштаб вида: от обзора всей системы до крупного плана внутренней части -->
+          <label for="zoomSlider">Масштаб:&nbsp;<span id="zoomLabel">1×</span></label>
+          <input id="zoomSlider" type="range" min="0.6" max="8" step="0.05" value="1" title="Колесо мыши над космосом тоже масштабирует" />
+          <div class="presets">
+            <button data-zoom="0.6">Обзор</button>
+            <button data-zoom="1">1×</button>
+            <button data-zoom="2">2×</button>
+            <button data-zoom="4">4×</button>
+            <button data-zoom="8">🔍 8×</button>
+          </div>
         </div>
       </div>
-      </div><!-- /ctrl-group -->
 
-      <div class="toggle-block">
-        <label><input type="checkbox" id="chkOrbits" checked /> Орбиты</label>
-        <label><input type="checkbox" id="chkLabels" checked /> Названия</label>
-        <label><input type="checkbox" id="chkMoons" checked title="Крупнейшие луны: Луна, Фобос и Деймос, галилеевы спутники Юпитера, Титан и др. (M)" /> 🌙 Луны</label>
-        <label><input type="checkbox" id="chkBelt" checked title="Главный пояс астероидов + Церера, Веста, Паллада, Гигея (B)" /> 🪨 Астероиды</label>
-        <label><input type="checkbox" id="chkComets" checked title="Медленные длиннопериодические кометы Гейла-Боппа и NEOWISE на вытянутых эллиптических орбитах с хвостами (C)" /> ☄️ Кометы</label>
-        <label><input type="checkbox" id="chkAliens" checked title="Случайные визиты инопланетных кораблей: НЛО пролетает через систему, облётывая Солнце (U — вкл/выкл слой)" /> 👽 Инопланетяне</label>
-        <button id="btnAlienCall" class="chip-btn" title="Пригласить гостя прямо сейчас">🛸 Позвать гостя</button>
-        <label title="Спутники — по линейной шкале диаметров"><input type="checkbox" id="chkScale" /> 🔬 Реальные размеры</label>
-        <button id="btnMusic" class="chip-btn" title="Фоновая космическая музыка генерируется в браузере, файлов нет (P)">🎵 Космическая музыка</button>
+      <div class="ctrl-divider"></div>
+
+      <!-- Секция «Слои» -->
+      <div class="ctrl-section">
+        <div class="ctrl-section-title">Слои</div>
+        <div class="toggle-block">
+          <label><input type="checkbox" id="chkOrbits" checked /> Орбиты</label>
+          <label><input type="checkbox" id="chkLabels" checked /> Названия</label>
+          <label><input type="checkbox" id="chkMoons" checked title="Крупнейшие луны: Луна, Фобос и Деймос, галилеевы спутники Юпитера, Титан и др. (M)" /> 🌙 Луны</label>
+          <label><input type="checkbox" id="chkBelt" checked title="Главный пояс астероидов + Церера, Веста, Паллада, Гигея (B)" /> 🪨 Астероиды</label>
+          <label><input type="checkbox" id="chkComets" checked title="Медленные длиннопериодические кометы Гейла-Боппа и NEOWISE на вытянутых эллиптических орбитах с хвостами (C)" /> ☄️ Кометы</label>
+          <label><input type="checkbox" id="chkAliens" checked title="Случайные визиты инопланетных кораблей: НЛО пролетает через систему, облётывая Солнце (U — вкл/выкл слой)" /> 👽 Инопланетяне</label>
+          <label title="Спутники — по линейной шкале диаметров"><input type="checkbox" id="chkScale" /> 🔬 Реальные размеры</label>
+          <button id="btnAlienCall" class="chip-btn" title="Пригласить гостя прямо сейчас">🛸 Позвать гостя</button>
+          <button id="btnMusic" class="chip-btn" title="Фоновая космическая музыка генерируется в браузере, файлов нет (P)">🎵 Космическая музыка</button>
+        </div>
       </div>
-      </div><!-- /controls-body -->
     </div>
 
     <!-- Всплывающее уведомление о визите НЛО -->
