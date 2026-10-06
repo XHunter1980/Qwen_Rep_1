@@ -8,16 +8,13 @@
 
 /* Версия сборки — ТОЛЬКО номер, без описаний (по требованию).
    Видна в заголовке вкладки, в шапке страницы и в консоли. */
-const VERSION = "v4.0";
+const VERSION = "v4.1";
 document.title = `Солнечная система ${VERSION}`;
 console.log(`%c☀️ Солнечная система — сборка: ${VERSION}`, "color:#ffd75e;font-weight:bold");
-/* Бейдж версии в шапке страницы */
+/* Версия сборки: бейдж в заголовке панели управления + сноска внизу по центру */
 {
   const badge = document.getElementById("versionBadge");
   if (badge) badge.textContent = VERSION;
-  /* v4.0: компактный номер версии также в заголовке drawer'а управления */
-  const cver = document.getElementById("controlsVer");
-  if (cver) cver.textContent = VERSION;
 }
 
 /* ---------- Общие вспомогательные функции ---------- */

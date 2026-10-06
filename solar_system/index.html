@@ -14,14 +14,13 @@
 
     <!-- Верхняя панель -->
     <header class="topbar">
-      <h1>☀️ Солнечная система <span id="versionBadge" class="version-badge" title="Версия сборки — если её нет или она старая, вы открыли не тот архив"></span></h1>
-      <p class="hint">Клик — сведения о теле · Тяните мышкой/стрелками — двигать карту · Колесо — масштаб · Клавиши: Пробел, O, C, M, B, U, P (музыка), Home · Слайдеры скорости и масштаба</p>
+      <h1>☀️ Солнечная система</h1>
     </header>
 
     <!-- Панель управления: боковой drawer справа; сворачивается клавишей ◀ или H -->
     <div class="controls" role="group" aria-label="Управление симуляцией">
       <button id="btnCollapsePanel" class="panel-collapse" title="Свернуть/развернуть панель (H)">◀</button>
-      <div class="controls-header"><span>Управление</span><span id="controlsVer"></span></div>
+      <div class="controls-header"><span>Управление</span><span id="versionBadge" class="version-badge" title="Версия сборки — если её нет или она старая, вы открыли не тот архив"></span></div>
       <div class="controls-body" id="controlsBody">
 
       <!-- Секция «Симуляция» -->
@@ -86,8 +85,11 @@
       </div>
     </div>
 
-    <!-- Всплывающее уведомление о визите НЛО -->
+    <!-- Всплывающее уведомление о визите НЛО (вверху по центру) -->
     <div id="alienToast" class="alien-toast"></div>
+
+    <!-- Легенда управления: внизу посередине -->
+    <p class="hint legend">Клик — сведения о теле · Тяните мышкой/стрелками — двигать карту · Колесо — масштаб · Клавиши: Пробел, O, C, M, B, U, P (музыка), H (панель), Home</p>
 
     <!-- Боковая карточка с информацией о планете -->
     <aside id="infoPanel" class="info-panel hidden" aria-live="polite">
@@ -107,11 +109,12 @@
     <!-- Подсказка при наведении -->
     <div id="tooltip" class="tooltip hidden"></div>
 
-    <!-- Миникарта: положение Солнечной системы в Млечном Пути -->
+    <!-- Миникарта: положение Солнечной системы в Млечном Пути (нижний левый угол) -->
     <div class="minimap-wrap" title="Где наша система находится в Галактике">
       <canvas id="minimap" width="150" height="150"></canvas>
     </div>
 
+    <!-- Версия сборки — внизу по центру (единственное место отображения) -->
     <footer class="footnote" id="footnote"></footer>
   </div>
 

@@ -46,7 +46,7 @@ html, body {
   letter-spacing: .3px;
   white-space: nowrap;
 }
-.topbar .hint {
+.hint {
   margin-top: 4px;
   font-size: 13px;
   color: #9fb0cc;
@@ -124,6 +124,9 @@ html, body {
 }
 .ctrl-row .ctrl-btn { min-width: 0; width: 100%; font-size: 12.5px; padding: 7px 8px; }
 .ctrl-row .ctrl-btn.primary { grid-column: 1 / -1; }
+/* Кнопка режима орбит — на всю ширину, чтобы длинные надписи
+   («◯ Упрощённые орбиты» / «🪐 Эллипсы Кеплера») влезали целиком */
+#btnOrbitMode { grid-column: 1 / -1; }
 /* Слайдеры: метка со значением сверху, ползунок на всю ширину, пресеты сеткой */
 .speed-block, .zoom-block {
   display: flex;
@@ -199,10 +202,10 @@ html, body {
 }
 .panel-collapse:hover { color: #e8ecf5; background: rgba(60, 75, 130, 0.55); }
 
-/* ---------- Миникарта «Млечный Путь» (правый нижний угол) ---------- */
+/* ---------- Миникарта «Млечный Путь» (нижний левый угол) ---------- */
 .minimap-wrap {
   position: absolute;
-  right: 14px;
+  left: 14px;
   bottom: 14px;
   width: 150px;
   height: 150px;
@@ -276,7 +279,7 @@ input[type="range"] {
 /* ---------- Информационная карточка ---------- */
 .info-panel {
   position: absolute;
-  top: 70px; right: 20px;
+  top: 70px; right: 320px;   /* слева от drawer-а управления */
   width: 300px;
   padding: 20px 20px 16px;
   background: rgba(13, 17, 33, 0.9);
@@ -355,10 +358,11 @@ input[type="range"] {
 .tooltip.hidden { display: none; }
 
 /* ---------- Сноска ---------- */
-/* Сноска — только номер версии сборки (без описаний) */
+/* Версия сборки — внизу по центру, единственное отображение версии */
 .footnote {
   position: absolute;
-  left: 20px;
+  left: 50%;
+  transform: translateX(-50%);
   bottom: 14px;
   font-size: 12px;
   font-weight: 600;
@@ -372,10 +376,23 @@ input[type="range"] {
   pointer-events: none;
 }
 
+/* Легенда управления — над версией, внизу по центру */
+.legend {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 44px;
+  max-width: min(92vw, 860px);
+  text-align: center;
+  margin: 0;
+  z-index: 4;
+  pointer-events: none;
+}
+
 @media (max-width: 760px) {
   .info-panel { width: 250px; top: 60px; right: 10px; }
   .controls { gap: 10px; padding: 10px; }
-  .footnote { left: 10px; bottom: 10px; }
+  .legend { display: none; }        /* на узких экранах легенда мешает */
   input[type="range"] { width: 120px; }
 }
 
@@ -396,8 +413,8 @@ input[type="range"] {
 .alien-toast {
   position: fixed;
   left: 50%;
-  bottom: 54px;
-  transform: translateX(-50%) translateY(20px);
+  top: 18px;                    /* уведомление — вверху по центру */
+  transform: translateX(-50%) translateY(-20px);
   background: rgba(16, 24, 44, 0.92);
   border: 1px solid rgba(125, 255, 178, 0.5);
   box-shadow: 0 0 24px rgba(125, 255, 178, 0.25);
@@ -409,7 +426,8 @@ input[type="range"] {
   pointer-events: none;
   transition: opacity 0.4s, transform 0.4s;
   z-index: 40;
-  white-space: nowrap;
+  max-width: min(92vw, 640px);   /* чтобы не вылезало за края на узких экранах */
+  white-space: normal;           /* перенос вместо обрезания длинного текста */
 }
 .alien-toast.show {
   opacity: 1;
