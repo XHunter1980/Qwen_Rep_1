@@ -8,7 +8,7 @@
 
 /* Версия сборки — ТОЛЬКО номер, без описаний (по требованию).
    Видна в заголовке вкладки, в шапке страницы и в консоли. */
-const VERSION = "v4.4";
+const VERSION = "v4.5";
 document.title = `Солнечная система ${VERSION}`;
 console.log(`%c☀️ Солнечная система — сборка: ${VERSION}`, "color:#ffd75e;font-weight:bold");
 /* Версия сборки: бейдж в заголовке панели управления + сноска внизу по центру */
@@ -71,6 +71,7 @@ const state = {
   zoom: 1,                       // масштаб вида (0.6× … 8×), колесо мыши / слайдер
   panX: 0, panY: 0,              // панорамирование: смещение центра системы (px)
   music: false,                  // фоновая космическая музыка (WebAudio, без файлов)
+  panelCollapsed: false,         // панель управления свёрнута (v4.5: hover-раскрытие)
   selected: null,
   hovered: null,
 };
@@ -1442,8 +1443,10 @@ function frame(now) {
   lastT = now;
 
   if (state.playing) {
-    // скорость: множитель; базовая шкала — Earth_year = 20 c
-    state.simDays += dt * state.speed * (365.25 / EARTH_YEAR_SECONDS);
+    // v4.5: скорость измеряется СТРОГО в разах от реальной:
+    // simDays += dt(сек) × speed(×) × REAL_RATE(сутк/сек на 1×),
+    // т.е. при 1× проходит ровно один земной год за 20 секунд.
+    state.simDays += dt * state.speed * REAL_RATE;
   }
 
   const timeSec = now / 1000;
@@ -1893,7 +1896,12 @@ function fmtSpeed(v) {
 
 /* Скорость задаётся ЧИСЛОМ (разы от реальной). Ползунок — логарифмический:
    его позиция t = log10(speed), диапазон 0.05× … 1000×. Так «иксы на
-   увеличение» распределены равномерно по десятичным порядкам. */
+   увеличение» распределены равномерно по десятичным порядкам.
+   v4.5: множитель REAL_RATE переводит «разы от реальной» в модельные сутки/с:
+   при скорости 1× система идёт в РАЗЫ ОТ РЕАЛЬНОГО времени (земной год ≈
+   365 сут ≈ 20 с реального времени); прежняя базовая скорость была завышена
+   в ~73 раза, из-за чего даже «0.05×» выглядело быстрым бегом планет. */
+const REAL_RATE = 365.25 / EARTH_YEAR_SECONDS; // сутк/сек на каждую «реальную ×»
 function setSpeed(v) {
   v = Math.min(1000, Math.max(0, v));
   state.speed = v;
@@ -1919,7 +1927,7 @@ btnPlayPause.addEventListener("click", () => {
 
 btnReset.addEventListener("click", () => {
   state.simDays = 0;
-  setSpeed(0.05);   // стартовая скорость: 0.05× от реальной
+  setSpeed(1);      // v4.5: стартовая скорость 1× (разы от реального времени)
   setZoom(1);       // и возврат масштаба к обзору всей системы
   state.panX = 0; state.panY = 0;   // карта — обратно в центр экрана
   state.playing = true;
@@ -1948,6 +1956,9 @@ let musicNodes = null;
    ========================================================= */
 const NOTE_FREQ = {           // частоты нот (равномерная темперация, Гц)
   "A2":110.00,"C3":130.81,"D3":146.83,"E3":164.81,"F3":174.61,"G3":196.00,
+  "B3":246.94,                // v4.5: была нужна аккорду G — при её отсутствии
+                              // NOTE_FREQ["B3"] = undefined → осциллятор пэда
+                              // глох (NaN частота), музыка «не слышна»
   "A3":220.00,"C4":261.63,"D4":293.66,"E4":329.63,"F4":349.23,"G4":392.00,
   "A4":440.00,"B4":493.88,"C5":523.25,"D5":587.33,"E5":659.25,"F5":698.46,
   "G5":783.99,"A5":880.00
@@ -1966,10 +1977,19 @@ function startMusic() {
   const AC = window.AudioContext || window.webkitAudioContext;
   if (!AC) return;
   const ac = new AC();
+  // v4.5: браузеры ставят вновь созданный AudioContext в состояние
+  // "suspended" (политика autoplay), и звук не играл вообще, даже после
+  // клика по кнопке — чиним явным resume() из обработчика пользовательского
+  // действия (клик/клавиша P), с повторной проверкой через мгновение.
+  const tryResume = () => { try { ac.resume(); } catch (_) {} };
+  tryResume();
+  setTimeout(tryResume, 120);
+  document.addEventListener("pointerdown", tryResume, { once: true });
   const master = ac.createGain();
   master.gain.value = 0.0;
   master.connect(ac.destination);
-  master.gain.linearRampToValueAtTime(0.2, ac.currentTime + 3); // плавный вход
+  // v4.5: общая громкость поднята (было 0.2 — на практике почти не слышно)
+  master.gain.linearRampToValueAtTime(0.5, ac.currentTime + 3); // плавный вход
 
   /* общий «космический» тембр: лёгкий тремор громкости */
   const lfo = ac.createOscillator();
@@ -2125,7 +2145,25 @@ document.getElementById("btnMusic").addEventListener("click", () => toggleMusic(
 const controlsEl = document.querySelector(".controls");
 const btnCollapse = document.getElementById("btnCollapsePanel");
 
+/* ---------- v4.5: автоскрытие панели + раскрытие при подведении мыши ----------
+   Панель сворачивается сама, если ей не пользовались AUTO_HIDE_MS; любое
+   действие внутри сбрасывает таймер. Когда панель свёрнута, тонкая невидимая
+   полоса у правого края экрана (hot zone) раскрывает её при наведении мыши;
+   курсор уходит за край — панель снова прячется через небольшую задержку. */
+const AUTO_HIDE_MS = 12000;      // нет активности в панели 12 с → свернуть
+let autoHideTimer = null;
+let hoverOpenTimer = null;
+let mouseOverControls = false;
+let userPinned = !controlsEl.classList.contains("collapsed"); // старт: панель открыта
+
+function bumpAutoHide() {
+  if (autoHideTimer) clearTimeout(autoHideTimer);
+  if (!userPinned || state.panelCollapsed) return;
+  autoHideTimer = setTimeout(() => setPanelCollapsed(true), AUTO_HIDE_MS);
+}
+
 function setPanelCollapsed(collapsed) {
+  state.panelCollapsed = collapsed;
   controlsEl.classList.toggle("collapsed", collapsed);
   // При сворачивании клавиша «раскрыть» выносится из drawer'а (fixed),
   // иначе она уезжает за экран вместе с панелью и становится невидимой
@@ -2133,12 +2171,69 @@ function setPanelCollapsed(collapsed) {
   /* v4.0: маленькая круглая клавиша — только стрелка направления */
   btnCollapse.textContent = collapsed ? "▶" : "◀";
   btnCollapse.title = collapsed
-    ? "Развернуть панель управления (H)"
+    ? "Развернуть панель управления (H или наведение мыши на правый край)"
     : "Свернуть панель управления (H)";
+  if (collapsed) {
+    if (autoHideTimer) clearTimeout(autoHideTimer);
+  } else {
+    bumpAutoHide();
+  }
+  syncEdgeZone();
 }
-btnCollapse.addEventListener("click", () => {
-  setPanelCollapsed(!controlsEl.classList.contains("collapsed"));
+
+/* Любое взаимодействие внутри панели откладывает автоскрытие */
+controlsEl.addEventListener("pointerdown", bumpAutoHide, true);
+controlsEl.addEventListener("wheel", bumpAutoHide, { passive: true });
+controlsEl.addEventListener("pointerenter", () => { mouseOverControls = true; bumpAutoHide(); });
+controlsEl.addEventListener("pointerleave", () => { mouseOverControls = false; bumpAutoHide(); });
+
+/* Hot zone у правого края: показываем полосу-подсказку и раскрываем по наведению */
+const edgeHint = document.createElement("div");
+edgeHint.id = "edgeHint";
+edgeHint.textContent = "⚙";
+document.body.appendChild(edgeHint);
+const edgeZone = document.createElement("div");
+edgeZone.id = "edgeZone";
+document.body.appendChild(edgeZone);
+
+edgeZone.addEventListener("pointerenter", () => {
+  edgeHint.classList.add("visible");
+  if (state.panelCollapsed && !hoverOpenTimer) {
+    hoverOpenTimer = setTimeout(() => {
+      hoverOpenTimer = null;
+      setPanelCollapsed(false);
+    }, 160);   // короткая задержка — против случайных «задеваний» края
+  }
 });
+edgeZone.addEventListener("pointerleave", () => {
+  edgeHint.classList.remove("visible");
+  if (hoverOpenTimer) { clearTimeout(hoverOpenTimer); hoverOpenTimer = null; }
+});
+/* Увод курсора обратно в космос (не в панель) — панель снова прячется */
+controlsEl.addEventListener("pointerleave", () => {
+  if (!mouseOverControls && !state.panelCollapsed) {
+    setTimeout(() => {
+      if (!mouseOverControls && !state.panelCollapsed) setPanelCollapsed(true);
+    }, 900);
+  }
+});
+
+/* Синхронизация hot zone с состоянием панели: пока панель открыта,
+   правая полоса отключена — иначе её pointer-events перехватывали клики
+   по контролам (слайдеры, кнопки) на краю drawer'а */
+function syncEdgeZone() {
+  edgeZone.classList.toggle("disabled", !state.panelCollapsed);
+}
+
+btnCollapse.addEventListener("click", () => {
+  const willCollapse = !state.panelCollapsed;
+  userPinned = willCollapse ? false : true;  // явное развертывание «пиннит» панель
+  setPanelCollapsed(willCollapse);
+});
+
+/* v4.5: старт с свёрнутой панелью — чтобы hover-раскрытие у правого края
+   работало сразу (иначе hot zone перекрывалась открытой панелью). */
+setPanelCollapsed(true);
 
 /* ---------- Переключатель режима орбит: эллипсы Кеплера / упрощённые круги ---------- */
 const btnOrbitMode = document.getElementById("btnOrbitMode");
@@ -2267,6 +2362,8 @@ window.addEventListener("keydown", (e) => {
   }
 });
 
-setSpeed(0.05);   // старт: 0.05× от реальной скорости
+setSpeed(1);      // v4.5: старт при 1× — теперь это ЧЕСТНЫЕ разы от реального
+                  // времени (земной год ≈ 20 с), прежние 0.05× из-за завышенной
+                  // базовой шкалы давали ~18 сут/с и «бег» планет
 setZoom(1);
 updatePlayButton();

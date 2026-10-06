@@ -214,6 +214,43 @@ html, body {
 }
 .panel-collapse:hover { color: #e8ecf5; background: rgba(60, 75, 130, 0.55); }
 
+/* =========================================================
+   v4.5: раскрытие панели при подведении мыши к правому краю
+   Невидимая hot zone (26 px) у края экрана + тонкая светящаяся
+   полоса-подсказка с иконкой шестерёнки, появляющаяся при наведении.
+   ========================================================= */
+#edgeZone {
+  position: fixed;
+  top: 0; right: 0; bottom: 0;
+  width: 26px;
+  z-index: 14;            /* выше свёрнутой панели, ниже раскрытой (15) */
+  cursor: pointer;
+}
+#edgeHint {
+  position: fixed;
+  top: 50%; right: 0;
+  transform: translateY(-50%);
+  width: 22px; height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  color: #cfe0ff;
+  background: linear-gradient(to left, rgba(90, 120, 210, 0.5), rgba(90, 120, 210, 0.12));
+  border: 1px solid rgba(140, 170, 240, 0.35);
+  border-right: none;
+  border-radius: 10px 0 0 10px;
+  backdrop-filter: blur(6px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .2s ease;
+  z-index: 14;
+}
+#edgeHint.visible { opacity: 1; }
+/* Когда панель раскрыта — hot zone отключена (класс .disabled ставит JS),
+   иначе невидимая полоса перехватывала клики по контролам у края панели */
+#edgeZone.disabled { pointer-events: none; }
+
 
 /* v4.2: карта Млечного Пути — под основным заголовком (слева вверху) */
 .minimap-wrap {
