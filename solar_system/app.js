@@ -8,7 +8,7 @@
 
 /* Версия сборки — ТОЛЬКО номер, без описаний (по требованию).
    Видна в заголовке вкладки, в шапке страницы и в консоли. */
-const VERSION = "v4.6";
+const VERSION = "v4.7";
 document.title = `Солнечная система ${VERSION}`;
 console.log(`%c☀️ Солнечная система — сборка: ${VERSION}`, "color:#ffd75e;font-weight:bold");
 /* Версия сборки: бейдж в заголовке панели управления + сноска внизу по центру */
@@ -1982,13 +1982,23 @@ function startMusic() {
   // "suspended" (политика autoplay), и звук не играл вообще, даже после
   // клика по кнопке — чиним явным resume() из обработчика пользовательского
   // действия (клик/клавиша P), с повторной проверкой через мгновение.
-  const tryResume = () => { try { ac.resume(); } catch (_) {} };
+  const tryResume = () => { try { ac.resume().catch(() => {}); } catch (_) {} };
   tryResume();
   setTimeout(tryResume, 120);
-  /* v4.6: НЕ once — если контекст создавался вне пользовательского жеста,
-     он остаётся suspended; слушатель живёт, пока контекст не разблокирован */
-  document.addEventListener("pointerdown", tryResume);
-  document.addEventListener("keydown", tryResume);
+  /* v4.7: слушатели живут до первой же попытки разблокировки и снимаются
+     сами — раньше resume() мог вызываться в момент, когда браузер ещё не
+     считает страницу «interactive» (например, автозапуск сразу после
+     загрузки), контекст оставался suspended и музыки не было слышно. */
+  const unlockHandler = () => {
+    if (ac.state === "running") {
+      document.removeEventListener("pointerdown", unlockHandler);
+      document.removeEventListener("keydown", unlockHandler);
+      return;
+    }
+    tryResume();
+  };
+  document.addEventListener("pointerdown", unlockHandler);
+  document.addEventListener("keydown", unlockHandler);
   const master = ac.createGain();
   master.gain.value = 0.0;
   master.connect(ac.destination);
@@ -2158,10 +2168,19 @@ if (!btnCollapse) {
   document.body.appendChild(btnCollapse);
 }
 
-/* ---------- v4.6: музыка — WebAudio нельзя запустить без действия
+/* ---------- v4.7: музыка — WebAudio нельзя запустить без действия
    пользователя (политика autoplay). state.music=true по умолчанию, а
-   реальный старт происходит при первом клике/нажатии клавиши. ---------- */
+   реальный старт происходит при первом клике/нажатии клавиши.
+   ФЛАГ once: слушатели снимаются после первого же срабатывания — раньше
+   они оставались навсегда и каждый клик по canvas вызывал ПОВТОРНЫЙ
+   startMusic(): создавался новый AudioContext поверх старого (лимит браузеров
+   ~6 контекстов), в итоге все нити звука глохли — «музыки не слышно». */
+let musicUnlockPending = true;
 function unlockMusic() {
+  if (!musicUnlockPending) return;
+  musicUnlockPending = false;
+  document.removeEventListener("pointerdown", unlockMusic);
+  document.removeEventListener("keydown", unlockMusic);
   if (state.music && !musicNodes) startMusic();
 }
 document.addEventListener("pointerdown", unlockMusic);
@@ -2184,12 +2203,17 @@ function bumpAutoHide() {
   autoHideTimer = setTimeout(() => setPanelCollapsed(true), AUTO_HIDE_MS);
 }
 
+/* v4.7: плавающая клавиша ВСЕГДА в режиме floating (fixed у правого края,
+   z-index выше панели). Раньше класс floating добавлялся только при
+   сворачивании, а при открытой панели кнопка лежала внутри drawer'а, где
+   правило `.controls .panel-collapse { display:none }` полностью её скрывало
+   — «кнопка открытия панели не видна». Теперь она видна и кликабельна
+   в любом состоянии: ◀ сворачивает, ▶ раскрывает. */
+btnCollapse.classList.add("floating");
+
 function setPanelCollapsed(collapsed) {
   state.panelCollapsed = collapsed;
   controlsEl.classList.toggle("collapsed", collapsed);
-  // При сворачивании клавиша «раскрыть» выносится из drawer'а (fixed),
-  // иначе она уезжает за экран вместе с панелью и становится невидимой
-  btnCollapse.classList.toggle("floating", collapsed);
   /* v4.0: маленькая круглая клавиша — только стрелка направления */
   btnCollapse.textContent = collapsed ? "▶" : "◀";
   btnCollapse.title = collapsed
@@ -2253,9 +2277,22 @@ btnCollapse.addEventListener("click", () => {
   setPanelCollapsed(willCollapse);
 });
 
-/* v4.5: старт с свёрнутой панелью — чтобы hover-раскрытие у правого края
-   работало сразу (иначе hot zone перекрывалась открытой панелью). */
-setPanelCollapsed(true);
+/* v4.7: клик по космосу при свёрнутой панели раскрывает её (пользователь
+   хочет управлять). Кнопка теперь всегда floating, поэтому отдельный guard
+   от двойного срабатывания не нужен — достаточно проверки collapsed. */
+document.addEventListener("pointerdown", (e) => {
+  if (!state.panelCollapsed) return;          // панель и так открыта
+  if (controlsEl.contains(e.target)) return;  // клик внутри панели
+  if (btnCollapse.contains(e.target)) return; // клик по самой кнопке
+  userPinned = true;
+  setPanelCollapsed(false);
+}, true);   // capture: до обработчиков canvas
+
+/* v4.7: старт с ОТКРЫТОЙ панелью — сразу видно все контролы и плавающую
+   клавишу сворачивания (раньше панель стартовала свёрнутой, и пользователи
+   не находили кнопку раскрытия). Hot zone у правого края при этом отключена
+   (syncEdgeZone), так что клики по панели не перехватываются. */
+setPanelCollapsed(false);
 
 /* v4.6: стартовое состояние кнопки музыки (включена по умолчанию) */
 {

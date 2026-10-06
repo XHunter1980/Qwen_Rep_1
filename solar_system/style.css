@@ -330,9 +330,11 @@ input[type="range"] {
 .toggle-block input { accent-color: #6a8dff; cursor: pointer; }
 
 /* ---------- Информационная карточка ---------- */
-/* v4.6: перемещена в левый нижний угол экрана (была справа, у панели) */
+/* v4.7: fixed — карточка привязана к экрану и НЕ зависит от состояния
+   панели управления (раньше наследовала её перекрытие/скрытие).
+   Левый нижний угол — противоположный угол от панели (справа). */
 .info-panel {
-  position: absolute;
+  position: fixed;
   bottom: 18px; left: 18px;
   top: auto; right: auto;
   width: 300px;
@@ -350,8 +352,8 @@ input[type="range"] {
   transform: translateY(30px);
   pointer-events: none;
 }
-@media (max-width: 760px) {   /* узкий экран: миникарта сверху, карточка шире */
-  .info-panel { width: min(86vw, 300px); }
+@media (max-width: 760px) {   /* узкий экран: карточка шире, но всё так же слева снизу */
+  .info-panel { width: min(86vw, 300px); bottom: 12px; left: 12px; }
 }
 
 .close-btn {
@@ -438,7 +440,8 @@ input[type="range"] {
    их стили (.legend / .alien-toast) удалены вместе с DOM-элементами. */
 
 @media (max-width: 760px) {
-  .info-panel { width: 250px; top: 60px; right: 10px; }
+  /* v4.7: карточка остаётся в левом нижнем углу и на узких экранах */
+  .info-panel { width: 250px; top: auto; right: auto; bottom: 12px; left: 12px; }
   .controls { gap: 10px; padding: 10px; }
   input[type="range"] { width: 120px; }
 }
