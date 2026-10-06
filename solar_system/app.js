@@ -8,7 +8,7 @@
 
 /* Версия сборки — ТОЛЬКО номер, без описаний (по требованию).
    Видна в заголовке вкладки, в шапке страницы и в консоли. */
-const VERSION = "v4.9";
+const VERSION = "v5.0";
 document.title = `Солнечная система ${VERSION}`;
 console.log(`%c☀️ Солнечная система — сборка: ${VERSION}`, "color:#ffd75e;font-weight:bold");
 /* Версия сборки: бейдж в заголовке панели управления + сноска внизу по центру */
@@ -1956,6 +1956,9 @@ let musicNodes = null;
    ========================================================= */
 const NOTE_FREQ = {           // частоты нот (равномерная темперация, Гц)
   "Bb1":58.27,                // v4.9: бас второй прогрессии (Bb)
+  /* v5.0: расширено до хроматики — нужно теме «Полёт Валькирий» (E-мелодик
+     минор): C#, D#, F#, G#, A#, B5 и басы E2/F#2/G#2/A2/B2 */
+  "C#3":138.53,"D#3":155.56,"F#3":185.00,"G#3":207.65,"A#3":233.08,
   "A2":110.00,"C3":130.81,"D3":146.83,"E3":164.81,"F3":174.61,"G3":196.00,
   "Bb3":233.08,               // v4.9: нота аккорда Bb
   "B3":246.94,                // v4.5: была нужна аккорду G — при её отсутствии
@@ -1963,31 +1966,48 @@ const NOTE_FREQ = {           // частоты нот (равномерная �
                               // глох (NaN частота), музыка «не слышна»
   "A3":220.00,"C4":261.63,"D4":293.66,"E4":329.63,"F4":349.23,"G4":392.00,
   "A4":440.00,"B4":493.88,"C5":523.25,"D5":587.33,"E5":659.25,"F5":698.46,
-  "G5":783.99,"A5":880.00
+  "G5":783.99,"A5":880.00,
+  "C#5":554.37,"D#5":622.25,"F#5":739.99,"G#5":830.61,"A#5":932.33,"B5":987.77,
+  "C#6":1108.73,"D6":1174.66,"E6":1318.51,"F2":87.31,"E2":82.41,"F#2":92.50,"G#2":103.83,"B2":123.47
 };
-/* v4.9: две прогрессии чередуются каждые 8 тактов — музыка не зацикливается
-   на одном четырёхтактовом круге. Первая — светлая (Am–F–C–G), вторая —
-   «глубокий космос» (Dm–Bb–F–C с более низкими басами). */
-const PROGS = [
-  [
-    { bass: "A2", chord: ["A3","C4","E4"] },   // Am
-    { bass: "F3", chord: ["F3","A3","C4"] },   // F
-    { bass: "C3", chord: ["C4","E4","G4"] },   // C
-    { bass: "G3", chord: ["G3","B3","D4"] },   // G
-  ],
-  [
-    { bass: "D3", chord: ["D4","F4","A4"] },   // Dm
-    { bass: "Bb1", chord: ["D3","F3","Bb3"] }, // Bb
-    { bass: "F2", chord: ["A3","C4","F4"] },   // F
-    { bass: "C3", chord: ["E3","G3","C4"] },   // C
-  ],
-];
 /* Ряды мелодии под каждую прогрессию (A-минорная и D-фригийская пентатоники) */
-const MELODY_SCALES = [
-  ["A4","C5","D5","E5","G5","A5","G5","E5","D5","C5"],
-  ["D4","F4","G4","A4","C5","D5","C5","A4","G4","F4"],
+
+/* v5.0: «застывшая» тема в духе Вагнера — «Полёт Валькирий»: медный
+   лейтмотив E–B–E (октавный подпрыгивающий бас, как у Валл-Валл-Валл),
+   скачущие восьмушки струнных и нарастающая кульминация. Это тот самый
+   узнаваемый «космический мотив». Реализация — честная партитура из 4
+   фраз с фиксированными длительностями; импровизации нет. */
+
+const MUSIC_TEMPO = 0.26;        // сек/восьмая (~115 BPM) — темп марша
+const NOTE_DUR = {               // длительности в долях-восьмых
+  e: 1, q: 2, dq: 3, h: 4, dh: 6, w: 8
+};
+/* Ноты: [имя, длительность]. Тема ми минор (Эолия) — тональность оригинала. */
+const VF_BASS = [   // остинатное тремоло низких: октавное «Валл-Валл» на тонике
+  ["E2", "e"], ["E3", "e"], ["E2", "e"], ["E3", "e"], ["E2", "q"],
+  ["E2", "e"], ["E3", "e"], ["E2", "e"], ["E3", "e"], ["E2", "q"],
 ];
-let MELODY_SCALE = MELODY_SCALES[0];   // активный ряд (переключается в scheduleBar)
+/* Фраза A: восходящий маршевый ход темы (B B | E... | D C# | B ...) */
+const VF_THEME_A = [
+  ["B4", "q"], ["E5", "h"], ["D5", "e"], ["C#5", "e"], ["B4", "q"],
+  ["A4", "e"], ["B4", "e"], ["C#5", "q"], ["B4", "h"],
+];
+/* Фраза B: развитие вверх до G#5 с синкопами */
+const VF_THEME_B = [
+  ["F#5", "q"], ["E5", "e"], ["D5", "e"], ["C#5", "q"], ["B4", "q"],
+  ["C#5", "e"], ["D5", "e"], ["E5", "h"], ["G#5", "w"],
+];
+/* Фраза C: нагнетание — повторы аккордовых тонов с хроматическим ходом */
+const VF_THEME_C = [
+  ["E5", "e"], ["E5", "e"], ["F#5", "e"], ["F#5", "e"], ["G#5", "q"], ["B5", "q"],
+  ["A5", "e"], ["G#5", "e"], ["F#5", "e"], ["E5", "e"], ["D#5", "q"], ["E5", "q"],
+];
+/* Фраза D: кульминация (B5) и спуск к тонике */
+const VF_THEME_D = [
+  ["B5", "dq"], ["A5", "e"], ["G#5", "h"], ["F#5", "q"], ["E5", "q"],
+  ["F#5", "e"], ["G#5", "e"], ["A5", "q"], ["B5", "q"], ["E5", "w"],
+];
+const VF_MELODY = [VF_THEME_A, VF_THEME_B, VF_THEME_C, VF_THEME_D];
 
 function startMusic() {
   if (musicNodes) return;   // v4.8: защита от второго AudioContext (двойной клик по кнопке)
@@ -2070,89 +2090,68 @@ function startMusic() {
     return o;
   });
 
-  /* --- Планировщик тактов: арпеджио + бас + мелодия --- */
-  const BEAT = 0.85;                 // сек. на долю (темп ~70)
-  let barIdx = 0;                    // номер такта в цикле
-  let nextT = ac.currentTime + 0.2;  // время начала следующего такта
-  let lastScaleStep = 0;             // для плавных шагов мелодии
-  let melodyRestLeft = 0;            // такты молчания солиста
+  /* v5.0: тема «Полёт Валькирий» вместо случайной импровизации — см.
+     партитуру VF_* выше. Планировщик читает фразы по очереди; темп,
+     длительности и высота нот фиксированы, поэтому мотив узнаваем. */
 
-  function scheduleBar() {
-    if (!musicNodes) return;
-    /* v4.9: смена «главной темы» каждые 8 тактов + переключение ряда мелодии */
-    const progSet = PROGS[Math.floor(barIdx / 8) % PROGS.length];
-    MELODY_SCALE = MELODY_SCALES[Math.floor(barIdx / 8) % MELODY_SCALES.length];
-    const prog = progSet[barIdx % progSet.length];
-    const t0 = nextT;
+  /* --- Планировщик тактов: остинатный бас + скачущие восьмушки темы --- */
+  const BEAT = MUSIC_TEMPO * 2;          // сек/четверть (~0.52) — маршевый шаг
+  let phraseIdx = 0;                     // текущая фраза A→B→C→D→A…
+  let nextT = ac.currentTime + 0.3;      // время начала следующей фразы
 
-    /* пэд: плавно перестраиваем осцилляторы на новый аккорд */
-    padOscs.forEach((o, i) => {
-      const target = NOTE_FREQ[prog.chord[i]];
-      o.frequency.cancelScheduledValues(t0);
-      o.frequency.setValueAtTime(o.frequency.value, t0);
-      o.frequency.linearRampToValueAtTime(target, t0 + 1.2);
-    });
-    padGain.gain.cancelScheduledValues(t0);
-    padGain.gain.setValueAtTime(padGain.gain.value, t0);
-    padGain.gain.linearRampToValueAtTime(0.085, t0 + 2.0);
-    padGain.gain.linearRampToValueAtTime(0.05, t0 + BEAT * 4 - 0.4);
-
-    /* арпеджио перебором: нота аккорда каждые полтакта, лесенкой вверх-вниз;
-       v4.9: два варианта рисунка (через один такт) — перебор не монотонный */
-    const arpPattern = (Math.floor(barIdx / 2) % 2 === 0)
-      ? [0, 1, 2, 1]        // классическая «лесенка»
-      : [2, 1, 0, 1];       // обратный ход — звучит как ответ фразы
-    for (let s = 0; s < 4; s++) {
-      const note = prog.chord[arpPattern[s]];
-      const t = t0 + s * BEAT;
-      bell(NOTE_FREQ[note], t, BEAT * 1.4, 0.05, echoPad);
-      /* октавный отзвук тише — добавляет «стеклянности» */
-      bell(NOTE_FREQ[note] * 2, t + 0.02, BEAT * 0.9, 0.018, echoPad);
-    }
-
-    /* мягкий бас на первую долю каждого такта */
-    {
-      const o = ac.createOscillator(), g = ac.createGain();
-      o.type = "sine";
-      o.frequency.value = NOTE_FREQ[prog.bass];
-      g.gain.setValueAtTime(0, t0);
-      g.gain.linearRampToValueAtTime(0.075, t0 + 0.1);
-      g.gain.exponentialRampToValueAtTime(0.0001, t0 + BEAT * 3.4);
-      o.connect(g).connect(master);
-      o.start(t0); o.stop(t0 + BEAT * 3.6);
-    }
-
-    /* --- мелодия: длинная нота на сильную долю, иногда ответ на слабую --- */
-    if (melodyRestLeft > 0) melodyRestLeft--;
-    else if (Math.random() < 0.72) {
-      /* движение по ряду: чаще соседний шаг (легато), реже прыжок */
-      const step = Math.random() < 0.7
-        ? (Math.random() < 0.5 ? 1 : -1)
-        : (Math.random() < 0.5 ? 2 : -2);
-      lastScaleStep = Math.max(0, Math.min(MELODY_SCALE.length - 1, lastScaleStep + step));
-      const f = NOTE_FREQ[MELODY_SCALE[lastScaleStep]];
-      const when = t0 + (Math.random() < 0.3 ? BEAT * 2 : 0);
-      const len = BEAT * (Math.random() < 0.35 ? 2.6 : 1.6);
-      bell(f, when, len, 0.085, echoMel);
-      /* occasional второй голос терцией ниже — намёк на гармонию */
-      if (Math.random() < 0.3) {
-        const idx2 = Math.max(0, lastScaleStep - 2);
-        bell(NOTE_FREQ[MELODY_SCALE[idx2]], when + 0.06, len * 0.8, 0.03, echoMel);
-      }
-      /* после фразы — пауза, чтобы мелодия «дышала» */
-      if (Math.random() < 0.3) melodyRestLeft = 1 + (Math.random() < 0.4 ? 1 : 0);
-    }
-
-    barIdx++;
-    nextT += BEAT * 4;
-    /* планируем с запасом, но синхронно с реальным временем */
-    setTimeout(scheduleBar, Math.max(30, (nextT - ac.currentTime - BEAT * 4) * 1000));
+  /* один голос темы: sawtooth через lowpass (имитация медных/струнных) */
+  function playNote(freq, t, durSec, vol, dest, type) {
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = type || "sawtooth";
+    o.frequency.value = freq;
+    const filt = ac.createBiquadFilter();
+    filt.type = "lowpass"; filt.frequency.value = 1800; filt.Q.value = 0.7;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(vol, t + Math.min(0.04, durSec * 0.3));
+    g.gain.setValueAtTime(vol, t + durSec * 0.75);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + durSec);
+    o.connect(filt).connect(g).connect(dest);
+    o.start(t); o.stop(t + durSec + 0.05);
   }
 
-  /* редкие верхние «звёздные блики» — теперь в тональности ряда */
+  function schedulePhrase() {
+    if (!musicNodes) return;
+    const t0 = nextT;
+    const theme = VF_MELODY[phraseIdx % VF_MELODY.length];
+
+    /* Остинатный бас «Валл-Валл»: тремоло октав E2/E3 на всём протяжении
+       фразы — гармонический фундамент темы (тоника ми минор). */
+    let bassT = t0;
+    const phraseLen = theme.reduce((s, [, d]) => s + NOTE_DUR[d], 0) * MUSIC_TEMPO;
+    while (bassT < t0 + phraseLen - 0.01) {
+      for (const [name, d] of VF_BASS) {
+        if (bassT >= t0 + phraseLen - 0.01) break;
+        playNote(NOTE_FREQ[name], bassT, NOTE_DUR[d] * MUSIC_TEMPO * 0.9,
+                 0.055, echoPad, "triangle");
+        bassT += NOTE_DUR[d] * MUSIC_TEMPO;
+      }
+    }
+
+    /* Тема: фиксированные ноты и длительности (скачущие восьмушки/четверти) */
+    let cur = t0;
+    for (const [name, d] of theme) {
+      const dur = NOTE_DUR[d] * MUSIC_TEMPO;
+      playNote(NOTE_FREQ[name], cur, dur * 0.92, 0.075, echoMel, "sawtooth");
+      /* дублируем тему в октаву ниже тише — эффект «медного хора» */
+      playNote(NOTE_FREQ[name] / 2, cur, dur * 0.92, 0.028, echoPad, "sawtooth");
+      cur += dur;
+    }
+
+    phraseIdx++;
+    nextT += phraseLen + MUSIC_TEMPO * 2;   // короткая цезура между фразами
+    setTimeout(schedulePhrase,
+      Math.max(30, (nextT - ac.currentTime - phraseLen) * 1000));
+  }
+
+  /* редкие верхние «звёздные блики» — в тональности темы (ми минор) */
   function twinkle() {
     if (!musicNodes) return;
-    const notes = ["E5","G5","A5","C5"];
+    const notes = ["E5","G5","A5","B5","E6"];
     bell(NOTE_FREQ[notes[Math.floor(Math.random() * notes.length)]],
          ac.currentTime + 0.05, 2.0, 0.035, echoMel);
     setTimeout(twinkle, 7000 + Math.random() * 9000);
@@ -2162,7 +2161,7 @@ function startMusic() {
      флаг ставится сразу после создания контекста, до первого такта */
   musicNodes = { ac, master, extras: [lfo, ...padOscs] };
 
-  scheduleBar();
+  schedulePhrase();
   twinkle();
 }
 
@@ -2187,16 +2186,30 @@ document.getElementById("btnMusic").addEventListener("click", () => toggleMusic(
 
 /* ---------- Сворачивание панели управления ---------- */
 const controlsEl = document.querySelector(".controls");
-/* v4.6: клавиша раскрытия — отдельная плавающая кнопка ВНЕ drawer'а.
-   Раньше она лежала внутри панели и при сворачивании уезжала за экран
-   вместе с ней (наследовала opacity:0) — пользователь её не видел. */
+/* v5.0: клавиша ▲/▼ — элемент ШАПКИ drawer'а (в index.html, внутри
+   .controls-header). Пользователь просил: «стрелочку ещё чуть выше» и
+   «кнопка должна быть ВНЕ области панели, а не накладываться на неё».
+   В шапке она физически над всеми контролами и никогда их не перекрывает;
+   при свёрнутой панели остаётся видимой (CSS .panel-collapse.always). */
 let btnCollapse = document.getElementById("btnCollapsePanel");
 if (!btnCollapse) {
   btnCollapse = document.createElement("button");
   btnCollapse.id = "btnCollapsePanel";
-  btnCollapse.className = "panel-collapse floating";
-  document.body.appendChild(btnCollapse);
+  btnCollapse.className = "panel-collapse always";
+  const ch = document.querySelector(".controls-header");
+  if (ch) ch.appendChild(btnCollapse); else document.body.appendChild(btnCollapse);
 }
+
+/* v5.0: отдельная плавающая кнопка раскрытия для состояния collapsed —
+   маленькая вкладка у правого края экрана («▼»), видна только когда панель
+   свёрнута. Решает извечную жалобу «при скрытии не видно стрелочки»: её не
+   нужно искать — вкладка прижата к краю и подсвечивается. */
+const btnShowPanel = document.createElement("button");
+btnShowPanel.id = "btnShowPanel";
+btnShowPanel.textContent = "▼";
+btnShowPanel.title = "Показать панель управления (H)";
+document.body.appendChild(btnShowPanel);
+btnShowPanel.addEventListener("click", () => setPanelCollapsed(false));
 
 /* ---------- v4.8: музыка запускается ТОЛЬКО явным действием пользователя
    (клик по кнопке «🎵 Космическая музыка» или клавиша P). Раньше стояло
@@ -2206,22 +2219,10 @@ if (!btnCollapse) {
    Теперь состояние честное: выключено → включили → играет; выключили →
    stopMusic() гарантированно освобождает AudioContext. */
 
-/* ---------- v4.5: автоскрытие панели + раскрытие при подведении мыши ----------
-   Панель сворачивается сама, если ей не пользовались AUTO_HIDE_MS; любое
-   действие внутри сбрасывает таймер. Когда панель свёрнута, тонкая невидимая
-   полоса у правого края экрана (hot zone) раскрывает её при наведении мыши;
-   курсор уходит за край — панель снова прячется через небольшую задержку. */
-const AUTO_HIDE_MS = 12000;      // нет активности в панели 12 с → свернуть
-let autoHideTimer = null;
-let hoverOpenTimer = null;
-let mouseOverControls = false;
-let userPinned = !controlsEl.classList.contains("collapsed"); // старт: панель открыта
-
-function bumpAutoHide() {
-  if (autoHideTimer) clearTimeout(autoHideTimer);
-  if (!userPinned || state.panelCollapsed) return;
-  autoHideTimer = setTimeout(() => setPanelCollapsed(true), AUTO_HIDE_MS);
-}
+/* ---------- v5.0: автоскрытие/автооткрытие УДАЛЁНЫ ----------
+   По просьбе пользователя панель меняет состояние ТОЛЬКО от явных действий:
+   клик по клавише ◀/▶, клавиша H, кнопка «Скрыть панель» внизу drawer'а.
+   Никаких hover-раскрытий и таймеров, которые «съезжали» сами собой. */
 
 /* v4.7: плавающая клавиша ВСЕГДА в режиме floating (fixed у правого края,
    z-index выше панели). Раньше класс floating добавлялся только при
@@ -2229,102 +2230,53 @@ function bumpAutoHide() {
    правило `.controls .panel-collapse { display:none }` полностью её скрывало
    — «кнопка открытия панели не видна». Теперь она видна и кликабельна
    в любом состоянии: ◀ сворачивает, ▶ раскрывает. */
-btnCollapse.classList.add("floating");
-/* v4.9: клавиша — СВЕРХУ панели (а не сбоку, как в v4.8): fixed-кнопка
-   прижата к верхнему правому углу экрана над drawer'ом; top = offset верха
-   панели минус её рамка, right совпадает с отступом панели; при сворачивании
-   остаётся на месте и кликабельна. */
-function positionFloatingBtn() {
-  const rect = controlsEl.getBoundingClientRect();
-  /* когда панель свёрнута (translateX за край), берём эталонные константы CSS */
-  const topRef = isNaN(rect.top) || state.panelCollapsed ? 74 : rect.top;
-  btnCollapse.style.top = Math.max(10, topRef - 34) + "px";
-  btnCollapse.style.right = "26px";
-}
-window.addEventListener("resize", positionFloatingBtn);
-positionFloatingBtn();
+/* v5.0: клавиша — ВЫШЕ панели (стрелка ▲ при открытой / ▼ при свёрнутой).
+   Просьбы пользователя: «стрелочку ещё чуть выше» и «кнопка должна быть ВНЕ
+   области панели, а не накладываться на неё». Решение: кнопка НЕ плавающая
+   fixed-накладка, а физический элемент шапки drawer'а (в flex-строке
+   заголовка) — то есть над списком контролов, вне рабочей области панели,
+   никогда её не перекрывает. При сворачивании вместе с панелью прячется;
+   раскрыть можно клавишей H или кнопкой «▼ Панель управления», которая
+   появляется внизу drawer'а в состоянии collapsed (см. index.html). */
+function positionFloatingBtn() { /* v5.0: позиционирование из JS больше не нужно */ }
 
 function setPanelCollapsed(collapsed) {
   state.panelCollapsed = collapsed;
   controlsEl.classList.toggle("collapsed", collapsed);
-  /* v4.0: маленькая круглая клавиша — только стрелка направления */
-  btnCollapse.textContent = collapsed ? "▶" : "◀";
+  /* v5.0: направление стрелки — «куда денется панель»: ▲ убирает вверх/за
+     пределы вида, ▼ возвращает на место. Классика collapse-UI. */
+  btnCollapse.textContent = collapsed ? "▼" : "▲";
   btnCollapse.title = collapsed
-    ? "Развернуть панель управления (H или наведение мыши на правый край)"
-    : "Свернуть панель управления (H)";
-  if (collapsed) {
-    if (autoHideTimer) clearTimeout(autoHideTimer);
-  } else {
-    bumpAutoHide();
-  }
-  syncEdgeZone();
+    ? "Развернуть панель управления (клик по стрелке или клавиша H)"
+    : "Свернуть панель управления (клик по стрелке или клавиша H)";
+  /* v5.0: плавающая вкладка «▼» у края экрана — единственный явный способ
+     раскрыть свёрнутую панель мышью; показываем её только в collapsed */
+  btnShowPanel.classList.toggle("visible", collapsed);
 }
 
-/* Любое взаимодействие внутри панели откладывает автоскрытие */
-controlsEl.addEventListener("pointerdown", bumpAutoHide, true);
-controlsEl.addEventListener("wheel", bumpAutoHide, { passive: true });
-controlsEl.addEventListener("pointerenter", () => { mouseOverControls = true; bumpAutoHide(); });
-controlsEl.addEventListener("pointerleave", () => { mouseOverControls = false; bumpAutoHide(); });
-
-/* Hot zone у правого края: показываем полосу-подсказку и раскрываем по наведению */
-const edgeHint = document.createElement("div");
-edgeHint.id = "edgeHint";
-edgeHint.textContent = "⚙";
-document.body.appendChild(edgeHint);
-const edgeZone = document.createElement("div");
-edgeZone.id = "edgeZone";
-document.body.appendChild(edgeZone);
-
-edgeZone.addEventListener("pointerenter", () => {
-  edgeHint.classList.add("visible");
-  if (state.panelCollapsed && !hoverOpenTimer) {
-    hoverOpenTimer = setTimeout(() => {
-      hoverOpenTimer = null;
-      setPanelCollapsed(false);
-    }, 160);   // короткая задержка — против случайных «задеваний» края
-  }
-});
-edgeZone.addEventListener("pointerleave", () => {
-  edgeHint.classList.remove("visible");
-  if (hoverOpenTimer) { clearTimeout(hoverOpenTimer); hoverOpenTimer = null; }
-});
-/* Увод курсора обратно в космос (не в панель) — панель снова прячется */
-controlsEl.addEventListener("pointerleave", () => {
-  if (!mouseOverControls && !state.panelCollapsed) {
-    setTimeout(() => {
-      if (!mouseOverControls && !state.panelCollapsed) setPanelCollapsed(true);
-    }, 900);
-  }
-});
-
-/* Синхронизация hot zone с состоянием панели: пока панель открыта,
-   правая полоса отключена — иначе её pointer-events перехватывали клики
-   по контролам (слайдеры, кнопки) на краю drawer'а */
-function syncEdgeZone() {
-  edgeZone.classList.toggle("disabled", !state.panelCollapsed);
+/* v5.0: кнопка «Скрыть панель» внизу drawer'а — альтернативный способ
+   схлопнуть панель, если стрелка в шапке оказалась незаметна */
+const hideBtn = document.createElement("button");
+hideBtn.id = "btnHidePanel";
+hideBtn.className = "hide-panel-btn";
+hideBtn.textContent = "▲ Скрыть панель";
+hideBtn.title = "Свернуть панель управления (H)";
+const cBody = document.getElementById("controlsBody");
+if (cBody) {
+  const wrap = document.createElement("div");
+  wrap.className = "hide-panel-wrap";
+  wrap.appendChild(hideBtn);
+  cBody.appendChild(wrap);
 }
+hideBtn.addEventListener("click", () => setPanelCollapsed(true));
 
 btnCollapse.addEventListener("click", () => {
-  const willCollapse = !state.panelCollapsed;
-  userPinned = willCollapse ? false : true;  // явное развертывание «пиннит» панель
-  setPanelCollapsed(willCollapse);
+  setPanelCollapsed(!state.panelCollapsed);
 });
 
-/* v4.7: клик по космосу при свёрнутой панели раскрывает её (пользователь
-   хочет управлять). Кнопка теперь всегда floating, поэтому отдельный guard
-   от двойного срабатывания не нужен — достаточно проверки collapsed. */
-document.addEventListener("pointerdown", (e) => {
-  if (!state.panelCollapsed) return;          // панель и так открыта
-  if (controlsEl.contains(e.target)) return;  // клик внутри панели
-  if (btnCollapse.contains(e.target)) return; // клик по самой кнопке
-  userPinned = true;
-  setPanelCollapsed(false);
-}, true);   // capture: до обработчиков canvas
+/* v5.0: автораскрытие по клику по космосу УДАЛЁНО (вместе с автоскрытием).
+   Панель открывается только явно: стрелка ▼ над панелью или клавиша H. */
 
-/* v4.7: старт с ОТКРЫТОЙ панелью — сразу видно все контролы и плавающую
-   клавишу сворачивания (раньше панель стартовала свёрнутой, и пользователи
-   не находили кнопку раскрытия). Hot zone у правого края при этом отключена
-   (syncEdgeZone), так что клики по панели не перехватываются. */
 setPanelCollapsed(false);
 
 /* v4.8: стартовое состояние кнопки музыки (выключена — включается кликом/P) */
