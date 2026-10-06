@@ -202,11 +202,12 @@ html, body {
 }
 .panel-collapse:hover { color: #e8ecf5; background: rgba(60, 75, 130, 0.55); }
 
-/* ---------- Миникарта «Млечный Путь» (нижний левый угол) ---------- */
+
+/* v4.2: карта Млечного Пути — под основным заголовком (слева вверху) */
 .minimap-wrap {
-  position: absolute;
-  left: 14px;
-  bottom: 14px;
+  position: relative;
+  left: auto;
+  margin-top: 10px;
   width: 150px;
   height: 150px;
   border: 1px solid rgba(120, 150, 220, 0.35);

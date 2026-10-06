@@ -12,9 +12,12 @@
     <!-- Космос -->
     <canvas id="space"></canvas>
 
-    <!-- Верхняя панель -->
+    <!-- Верхняя панель: заголовок + под ним карта Млечного Пути -->
     <header class="topbar">
       <h1>☀️ Солнечная система</h1>
+      <div class="minimap-wrap" title="Где наша система находится в Галактике">
+        <canvas id="minimap" width="150" height="150"></canvas>
+      </div>
     </header>
 
     <!-- Панель управления: боковой drawer справа; сворачивается клавишей ◀ или H -->
@@ -108,11 +111,6 @@
 
     <!-- Подсказка при наведении -->
     <div id="tooltip" class="tooltip hidden"></div>
-
-    <!-- Миникарта: положение Солнечной системы в Млечном Пути (нижний левый угол) -->
-    <div class="minimap-wrap" title="Где наша система находится в Галактике">
-      <canvas id="minimap" width="150" height="150"></canvas>
-    </div>
 
     <!-- Версия сборки — внизу по центру (единственное место отображения) -->
     <footer class="footnote" id="footnote"></footer>
