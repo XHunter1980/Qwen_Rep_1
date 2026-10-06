@@ -8,13 +8,18 @@
 
 /* Версия сборки — ТОЛЬКО номер, без описаний (по требованию).
    Видна в заголовке вкладки, в шапке страницы и в консоли. */
-const VERSION = "v4.3";
+const VERSION = "v4.4";
 document.title = `Солнечная система ${VERSION}`;
 console.log(`%c☀️ Солнечная система — сборка: ${VERSION}`, "color:#ffd75e;font-weight:bold");
 /* Версия сборки: бейдж в заголовке панели управления + сноска внизу по центру */
 {
   const badge = document.getElementById("versionBadge");
   if (badge) badge.textContent = VERSION;
+}
+/* v4.4: версия больше не дублируется внизу страницы — скрываем сноску */
+{
+  const fn = document.getElementById("footnote");
+  if (fn) fn.style.display = "none";
 }
 
 /* ---------- Общие вспомогательные функции ---------- */
@@ -2122,6 +2127,9 @@ const btnCollapse = document.getElementById("btnCollapsePanel");
 
 function setPanelCollapsed(collapsed) {
   controlsEl.classList.toggle("collapsed", collapsed);
+  // При сворачивании клавиша «раскрыть» выносится из drawer'а (fixed),
+  // иначе она уезжает за экран вместе с панелью и становится невидимой
+  btnCollapse.classList.toggle("floating", collapsed);
   /* v4.0: маленькая круглая клавиша — только стрелка направления */
   btnCollapse.textContent = collapsed ? "▶" : "◀";
   btnCollapse.title = collapsed
@@ -2190,8 +2198,7 @@ document.getElementById("btnAlienCall").addEventListener("click", () => {
 /* Сноска: только номер версии сборки — без описаний и подробностей
    (требование пользователя: «пусть отображается только версия приложения»).
    Длинный текст не размещается в одну строку и залезал на легенду. */
-const footnote = document.getElementById("footnote");
-footnote.textContent = VERSION;
+/* v4.4: версия не дублируется внизу страницы — единственный вывод бейдж в шапке панели */
 
 /* Горячие клавиши */
 window.addEventListener("keydown", (e) => {

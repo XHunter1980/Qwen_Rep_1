@@ -76,11 +76,22 @@ html, body {
   transition: transform .3s cubic-bezier(.22, .8, .3, 1), opacity .25s ease;
 }
 /* Свёрнутое состояние: панель уезжает за правый край,
-   снаружи остаётся круглая «клавиша» раскрытия */
+   но клавиша раскрытия остаётся видимой (перекрепляется JS-ом) */
 .controls.collapsed {
   transform: translateX(calc(100% + 30px));
   opacity: 0;
   pointer-events: none;
+}
+/* Плавающая клавиша раскрытия — когда панель свёрнута, кнопка
+   выносится из drawer'а и закрепляется у правого края экрана */
+.panel-collapse.floating {
+  position: fixed;
+  left: auto;
+  right: 14px;
+  top: 96px;
+  z-index: 15;
+  opacity: 1;
+  pointer-events: auto;
 }
 .controls-header {
   display: flex;
@@ -123,7 +134,8 @@ html, body {
   gap: 7px;
 }
 .ctrl-row .ctrl-btn { min-width: 0; width: 100%; font-size: 12.5px; padding: 7px 8px; }
-.ctrl-row .ctrl-btn.primary { grid-column: 1 / -1; }
+/* v4.4: «Пауза» и «Сброс» — в одном ряду (раньше .primary растягивалась на всю ширину) */
+.ctrl-row .ctrl-btn.primary { grid-column: auto; }
 /* Кнопка режима орбит — на всю ширину, чтобы длинные надписи
    («◯ Упрощённые орбиты» / «🪐 Эллипсы Кеплера») влезали целиком */
 #btnOrbitMode { grid-column: 1 / -1; }
