@@ -8,7 +8,7 @@
 
 /* Версия сборки — ТОЛЬКО номер, без описаний (по требованию).
    Видна в заголовке вкладки, в шапке страницы и в консоли. */
-const VERSION = "v4.2";
+const VERSION = "v4.3";
 document.title = `Солнечная система ${VERSION}`;
 console.log(`%c☀️ Солнечная система — сборка: ${VERSION}`, "color:#ffd75e;font-weight:bold");
 /* Версия сборки: бейдж в заголовке панели управления + сноска внизу по центру */
@@ -1391,16 +1391,9 @@ function drawAlien(nowSec) {
   }
 }
 
-/* Уведомление о прибытии гостей (внизу по центру, автоисчезает). */
-const alienToast = document.getElementById("alienToast");
-let toastTimer = null;
-function showAlienToast(info) {
-  if (!alienToast) return;
-  alienToast.innerHTML = `Неопознанный объект: борт <b>${info.ship}</b> (${info.race}) вошёл в систему`;
-  alienToast.classList.add("show");
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => alienToast.classList.remove("show"), 5200);
-}
+/* v4.3: всплывающее уведомление об НЛО убрано по запросу — визиты и
+   кликабельная карточка «контакта» сохранены, но тост не показывается. */
+function showAlienToast(info) { /* no-op */ }
 
 /* Проверка спавна визита — в каждом кадре, с пуассоновской вероятностью. */
 /* Случайный визит: пуассоновская проверка каждый кадр, но с гарантией —

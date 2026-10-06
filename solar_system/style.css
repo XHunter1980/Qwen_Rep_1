@@ -377,27 +377,16 @@ input[type="range"] {
   pointer-events: none;
 }
 
-/* Легенда управления — над версией, внизу по центру */
-.legend {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  bottom: 44px;
-  max-width: min(92vw, 860px);
-  text-align: center;
-  margin: 0;
-  z-index: 4;
-  pointer-events: none;
-}
+/* v4.3: легенда управления и тост НЛО убраны из интерфейса по запросу;
+   их стили (.legend / .alien-toast) удалены вместе с DOM-элементами. */
 
 @media (max-width: 760px) {
   .info-panel { width: 250px; top: 60px; right: 10px; }
   .controls { gap: 10px; padding: 10px; }
-  .legend { display: none; }        /* на узких экранах легенда мешает */
   input[type="range"] { width: 120px; }
 }
 
-/* ---------- Инопланетяне: чип-кнопка и всплывающее уведомление ---------- */
+/* ---------- Инопланетяне: чип-кнопка ---------- */
 .chip-btn {
   background: rgba(125, 255, 178, 0.12);
   color: #9dffc6;
@@ -410,27 +399,3 @@ input[type="range"] {
 }
 .chip-btn:hover { background: rgba(125, 255, 178, 0.25); }
 .chip-btn:active { transform: scale(0.96); }
-
-.alien-toast {
-  position: fixed;
-  left: 50%;
-  top: 18px;                    /* уведомление — вверху по центру */
-  transform: translateX(-50%) translateY(-20px);
-  background: rgba(16, 24, 44, 0.92);
-  border: 1px solid rgba(125, 255, 178, 0.5);
-  box-shadow: 0 0 24px rgba(125, 255, 178, 0.25);
-  color: #d9ffe9;
-  padding: 10px 18px;
-  border-radius: 12px;
-  font-size: 14px;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.4s, transform 0.4s;
-  z-index: 40;
-  max-width: min(92vw, 640px);   /* чтобы не вылезало за края на узких экранах */
-  white-space: normal;           /* перенос вместо обрезания длинного текста */
-}
-.alien-toast.show {
-  opacity: 1;
-  transform: translateX(-50%) translateY(0);
-}
