@@ -8,7 +8,7 @@
 
 /* Версия сборки — ТОЛЬКО номер, без описаний (по требованию).
    Видна в заголовке вкладки, в шапке страницы и в консоли. */
-const VERSION = "v4.5";
+const VERSION = "v4.6";
 document.title = `Солнечная система ${VERSION}`;
 console.log(`%c☀️ Солнечная система — сборка: ${VERSION}`, "color:#ffd75e;font-weight:bold");
 /* Версия сборки: бейдж в заголовке панели управления + сноска внизу по центру */
@@ -70,7 +70,8 @@ const state = {
   showComets: true,
   zoom: 1,                       // масштаб вида (0.6× … 8×), колесо мыши / слайдер
   panX: 0, panY: 0,              // панорамирование: смещение центра системы (px)
-  music: false,                  // фоновая космическая музыка (WebAudio, без файлов)
+  music: true,                   // v4.6: музыка включена по умолчанию — иначе её
+                                 // «не слышно», пока не догадаетесь нажать кнопку
   panelCollapsed: false,         // панель управления свёрнута (v4.5: hover-раскрытие)
   selected: null,
   hovered: null,
@@ -2143,7 +2144,25 @@ document.getElementById("btnMusic").addEventListener("click", () => toggleMusic(
 
 /* ---------- Сворачивание панели управления ---------- */
 const controlsEl = document.querySelector(".controls");
-const btnCollapse = document.getElementById("btnCollapsePanel");
+/* v4.6: клавиша раскрытия — отдельная плавающая кнопка ВНЕ drawer'а.
+   Раньше она лежала внутри панели и при сворачивании уезжала за экран
+   вместе с ней (наследовала opacity:0) — пользователь её не видел. */
+let btnCollapse = document.getElementById("btnCollapsePanel");
+if (!btnCollapse) {
+  btnCollapse = document.createElement("button");
+  btnCollapse.id = "btnCollapsePanel";
+  btnCollapse.className = "panel-collapse floating";
+  document.body.appendChild(btnCollapse);
+}
+
+/* ---------- v4.6: музыка — WebAudio нельзя запустить без действия
+   пользователя (политика autoplay). state.music=true по умолчанию, а
+   реальный старт происходит при первом клике/нажатии клавиши. ---------- */
+function unlockMusic() {
+  if (state.music && !musicNodes) startMusic();
+}
+document.addEventListener("pointerdown", unlockMusic);
+document.addEventListener("keydown", unlockMusic);
 
 /* ---------- v4.5: автоскрытие панели + раскрытие при подведении мыши ----------
    Панель сворачивается сама, если ей не пользовались AUTO_HIDE_MS; любое
@@ -2234,6 +2253,12 @@ btnCollapse.addEventListener("click", () => {
 /* v4.5: старт с свёрнутой панелью — чтобы hover-раскрытие у правого края
    работало сразу (иначе hot zone перекрывалась открытой панелью). */
 setPanelCollapsed(true);
+
+/* v4.6: стартовое состояние кнопки музыки (включена по умолчанию) */
+{
+  const mb = document.getElementById("btnMusic");
+  if (mb && state.music) mb.textContent = "🔇 Музыка";
+}
 
 /* ---------- Переключатель режима орбит: эллипсы Кеплера / упрощённые круги ---------- */
 const btnOrbitMode = document.getElementById("btnOrbitMode");

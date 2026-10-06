@@ -22,7 +22,8 @@
 
     <!-- Панель управления: боковой drawer справа; сворачивается клавишей ◀ или H -->
     <div class="controls" role="group" aria-label="Управление симуляцией">
-      <button id="btnCollapsePanel" class="panel-collapse" title="Свернуть/развернуть панель (H)">◀</button>
+    <!-- v4.6: клавиша ◀/▶ перенесена из drawer'а на body — плавающая, видна
+         всегда (внутри панели она уезжала за экран при сворачивании) -->
       <div class="controls-header"><span>Управление</span><span id="versionBadge" class="version-badge" title="Версия сборки — если её нет или она старая, вы открыли не тот архив"></span></div>
       <div class="controls-body" id="controlsBody">
 

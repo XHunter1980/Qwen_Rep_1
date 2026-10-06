@@ -89,10 +89,13 @@ html, body {
   left: auto;
   right: 14px;
   top: 96px;
-  z-index: 15;
-  opacity: 1;
+  z-index: 30;           /* v4.6: выше раскрытой панели (25) — всегда кликабельна */
+  opacity: 1 !important; /* не наследовать скрытие drawer'а */
   pointer-events: auto;
 }
+/* v4.6: при раскрытой панели кнопка «спрятана» в её шапке (display:none),
+   поэтому плавающая версия остаётся единственной видимой клавишей */
+.controls .panel-collapse { display: none; }
 .controls-header {
   display: flex;
   align-items: center;
@@ -327,9 +330,11 @@ input[type="range"] {
 .toggle-block input { accent-color: #6a8dff; cursor: pointer; }
 
 /* ---------- Информационная карточка ---------- */
+/* v4.6: перемещена в левый нижний угол экрана (была справа, у панели) */
 .info-panel {
   position: absolute;
-  top: 70px; right: 320px;   /* слева от drawer-а управления */
+  bottom: 18px; left: 18px;
+  top: auto; right: auto;
   width: 300px;
   padding: 20px 20px 16px;
   background: rgba(13, 17, 33, 0.9);
@@ -342,8 +347,11 @@ input[type="range"] {
 }
 .info-panel.hidden {
   opacity: 0;
-  transform: translateX(30px);
+  transform: translateY(30px);
   pointer-events: none;
+}
+@media (max-width: 760px) {   /* узкий экран: миникарта сверху, карточка шире */
+  .info-panel { width: min(86vw, 300px); }
 }
 
 .close-btn {
