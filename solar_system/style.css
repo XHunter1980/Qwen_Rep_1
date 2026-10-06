@@ -72,7 +72,7 @@ html, body {
   border-radius: 16px;
   backdrop-filter: blur(10px);
   box-shadow: 0 10px 36px rgba(0, 0, 0, .55);
-  z-index: 12;
+  z-index: 25;            /* v4.8: выше инфо-карточки (12) — панель всегда поверх */
   transition: transform .3s cubic-bezier(.22, .8, .3, 1), opacity .25s ease;
 }
 /* Свёрнутое состояние: панель уезжает за правый край,
@@ -85,12 +85,14 @@ html, body {
 /* Плавающая клавиша раскрытия — когда панель свёрнута, кнопка
    выносится из drawer'а и закрепляется у правого края экрана */
 .panel-collapse.floating {
+  /* v4.8: клавиша живёт ВНЕ панели — прижата к её левой грани (right
+     подставляется из JS = ширина панели + 12px). Не перекрывает контролы,
+     видна и кликабельна в обоих состояниях (fixed, не наследует drawer). */
   position: fixed;
   left: auto;
-  right: 14px;
   top: 96px;
-  z-index: 30;           /* v4.6: выше раскрытой панели (25) — всегда кликабельна */
-  opacity: 1 !important; /* не наследовать скрытие drawer'а */
+  z-index: 30;
+  opacity: 1 !important;
   pointer-events: auto;
 }
 /* v4.6: при раскрытой панели кнопка «спрятана» в её шапке (display:none),
@@ -334,6 +336,8 @@ input[type="range"] {
    панели управления (раньше наследовала её перекрытие/скрытие).
    Левый нижний угол — противоположный угол от панели (справа). */
 .info-panel {
+  /* v4.8: z-index НИЖЕ панели управления — карточка больше никогда не
+     накладывается на неё; при этом остаётся в левом нижнем углу экрана */
   position: fixed;
   bottom: 18px; left: 18px;
   top: auto; right: auto;
@@ -344,7 +348,7 @@ input[type="range"] {
   border-radius: 16px;
   backdrop-filter: blur(10px);
   box-shadow: 0 10px 40px rgba(0,0,0,.6);
-  z-index: 20;
+  z-index: 12;            /* панель (15/25) всегда поверх карточки */
   transition: opacity .25s, transform .25s;
 }
 .info-panel.hidden {

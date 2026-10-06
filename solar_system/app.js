@@ -8,7 +8,7 @@
 
 /* Версия сборки — ТОЛЬКО номер, без описаний (по требованию).
    Видна в заголовке вкладки, в шапке страницы и в консоли. */
-const VERSION = "v4.7";
+const VERSION = "v4.8";
 document.title = `Солнечная система ${VERSION}`;
 console.log(`%c☀️ Солнечная система — сборка: ${VERSION}`, "color:#ffd75e;font-weight:bold");
 /* Версия сборки: бейдж в заголовке панели управления + сноска внизу по центру */
@@ -70,8 +70,7 @@ const state = {
   showComets: true,
   zoom: 1,                       // масштаб вида (0.6× … 8×), колесо мыши / слайдер
   panX: 0, panY: 0,              // панорамирование: смещение центра системы (px)
-  music: true,                   // v4.6: музыка включена по умолчанию — иначе её
-                                 // «не слышно», пока не догадаетесь нажать кнопку
+  music: false,                  // v4.8: выключена по умолчанию (см. startMusic)
   panelCollapsed: false,         // панель управления свёрнута (v4.5: hover-раскрытие)
   selected: null,
   hovered: null,
@@ -1975,6 +1974,13 @@ const PROG = [
 const MELODY_SCALE = ["A4","C5","D5","E5","G5","A5","G5","E5","D5","C5"];
 
 function startMusic() {
+  if (musicNodes) return;   // v4.8: защита от второго AudioContext (двойной клик по кнопке)
+  /* v4.8: главный баг «музыки не слышно» — гонка планировщика и состояния.
+     musicNodes присваивался в САМОМ КОНЦЕ функции, а scheduleBar() вызывался
+     до этого и первым делом проверял «if (!musicNodes) return». Первый же такт
+     (а с ним бас, пэд, арпеджио и мелодия) отбрасывался, следующий setTimeout
+     не ставился — тишина навсегда. Теперь контекст создаётся ДО первого такта,
+     а при ошибке WebAudio состояние честно возвращается к выключенному. */
   const AC = window.AudioContext || window.webkitAudioContext;
   if (!AC) return;
   const ac = new AC();
@@ -2130,10 +2136,12 @@ function startMusic() {
     setTimeout(twinkle, 7000 + Math.random() * 9000);
   }
 
+  /* v4.8: планировщик больше не зависит от «музыка уже зарегистрирована» —
+     флаг ставится сразу после создания контекста, до первого такта */
+  musicNodes = { ac, master, extras: [lfo, ...padOscs] };
+
   scheduleBar();
   twinkle();
-
-  musicNodes = { ac, master, extras: [lfo, ...padOscs] };
 }
 
 function stopMusic() {
@@ -2168,23 +2176,13 @@ if (!btnCollapse) {
   document.body.appendChild(btnCollapse);
 }
 
-/* ---------- v4.7: музыка — WebAudio нельзя запустить без действия
-   пользователя (политика autoplay). state.music=true по умолчанию, а
-   реальный старт происходит при первом клике/нажатии клавиши.
-   ФЛАГ once: слушатели снимаются после первого же срабатывания — раньше
-   они оставались навсегда и каждый клик по canvas вызывал ПОВТОРНЫЙ
-   startMusic(): создавался новый AudioContext поверх старого (лимит браузеров
-   ~6 контекстов), в итоге все нити звука глохли — «музыки не слышно». */
-let musicUnlockPending = true;
-function unlockMusic() {
-  if (!musicUnlockPending) return;
-  musicUnlockPending = false;
-  document.removeEventListener("pointerdown", unlockMusic);
-  document.removeEventListener("keydown", unlockMusic);
-  if (state.music && !musicNodes) startMusic();
-}
-document.addEventListener("pointerdown", unlockMusic);
-document.addEventListener("keydown", unlockMusic);
+/* ---------- v4.8: музыка запускается ТОЛЬКО явным действием пользователя
+   (клик по кнопке «🎵 Космическая музыка» или клавиша P). Раньше стояло
+   music=true по умолчанию + автозапуск при первом клике — любой клик по
+   космосу/планете мог дёрнуть startMusic(), а гонка планировщика
+   (musicNodes не был готов к первому такту) приводила к вечной тишине.
+   Теперь состояние честное: выключено → включили → играет; выключили →
+   stopMusic() гарантированно освобождает AudioContext. */
 
 /* ---------- v4.5: автоскрытие панели + раскрытие при подведении мыши ----------
    Панель сворачивается сама, если ей не пользовались AUTO_HIDE_MS; любое
@@ -2210,6 +2208,15 @@ function bumpAutoHide() {
    — «кнопка открытия панели не видна». Теперь она видна и кликабельна
    в любом состоянии: ◀ сворачивает, ▶ раскрывает. */
 btnCollapse.classList.add("floating");
+/* v4.8: плавающая клавиша ставится СЛЕВА от панели (вне её области),
+   а не поверх шапки: left = ширина панели + зазор; пересчитывается при
+   ресайзе и на узких экранах (там панель шире относительно окна). */
+function positionFloatingBtn() {
+  const w = controlsEl.getBoundingClientRect().width || parseFloat(getComputedStyle(controlsEl).width) || 300;
+  btnCollapse.style.right = (w + 12) + "px";
+}
+window.addEventListener("resize", positionFloatingBtn);
+positionFloatingBtn();
 
 function setPanelCollapsed(collapsed) {
   state.panelCollapsed = collapsed;
@@ -2294,7 +2301,7 @@ document.addEventListener("pointerdown", (e) => {
    (syncEdgeZone), так что клики по панели не перехватываются. */
 setPanelCollapsed(false);
 
-/* v4.6: стартовое состояние кнопки музыки (включена по умолчанию) */
+/* v4.8: стартовое состояние кнопки музыки (выключена — включается кликом/P) */
 {
   const mb = document.getElementById("btnMusic");
   if (mb && state.music) mb.textContent = "🔇 Музыка";
