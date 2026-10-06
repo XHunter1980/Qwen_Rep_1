@@ -8,7 +8,7 @@
 
 /* Версия сборки — ТОЛЬКО номер, без описаний (по требованию).
    Видна в заголовке вкладки, в шапке страницы и в консоли. */
-const VERSION = "v4.8";
+const VERSION = "v4.9";
 document.title = `Солнечная система ${VERSION}`;
 console.log(`%c☀️ Солнечная система — сборка: ${VERSION}`, "color:#ffd75e;font-weight:bold");
 /* Версия сборки: бейдж в заголовке панели управления + сноска внизу по центру */
@@ -1955,7 +1955,9 @@ let musicNodes = null;
    • мягкий бас по тонике аккорда на слабую долю.
    ========================================================= */
 const NOTE_FREQ = {           // частоты нот (равномерная темперация, Гц)
+  "Bb1":58.27,                // v4.9: бас второй прогрессии (Bb)
   "A2":110.00,"C3":130.81,"D3":146.83,"E3":164.81,"F3":174.61,"G3":196.00,
+  "Bb3":233.08,               // v4.9: нота аккорда Bb
   "B3":246.94,                // v4.5: была нужна аккорду G — при её отсутствии
                               // NOTE_FREQ["B3"] = undefined → осциллятор пэда
                               // глох (NaN частота), музыка «не слышна»
@@ -1963,15 +1965,29 @@ const NOTE_FREQ = {           // частоты нот (равномерная �
   "A4":440.00,"B4":493.88,"C5":523.25,"D5":587.33,"E5":659.25,"F5":698.46,
   "G5":783.99,"A5":880.00
 };
-/* Прогрессия: тоника баса + ноты аккорда снизу вверх (Am–F–C–G) */
-const PROG = [
-  { bass: "A2", chord: ["A3","C4","E4"] },   // Am
-  { bass: "F3", chord: ["F3","A3","C4"] },   // F
-  { bass: "C3", chord: ["C4","E4","G4"] },   // C
-  { bass: "G3", chord: ["G3","B3","D4"] },   // G (B3 ниже D4 — порядок снизу вверх)
+/* v4.9: две прогрессии чередуются каждые 8 тактов — музыка не зацикливается
+   на одном четырёхтактовом круге. Первая — светлая (Am–F–C–G), вторая —
+   «глубокий космос» (Dm–Bb–F–C с более низкими басами). */
+const PROGS = [
+  [
+    { bass: "A2", chord: ["A3","C4","E4"] },   // Am
+    { bass: "F3", chord: ["F3","A3","C4"] },   // F
+    { bass: "C3", chord: ["C4","E4","G4"] },   // C
+    { bass: "G3", chord: ["G3","B3","D4"] },   // G
+  ],
+  [
+    { bass: "D3", chord: ["D4","F4","A4"] },   // Dm
+    { bass: "Bb1", chord: ["D3","F3","Bb3"] }, // Bb
+    { bass: "F2", chord: ["A3","C4","F4"] },   // F
+    { bass: "C3", chord: ["E3","G3","C4"] },   // C
+  ],
 ];
-/* Звуковой ряд для мелодии (A-минорная пентатоника, вверх и вниз) */
-const MELODY_SCALE = ["A4","C5","D5","E5","G5","A5","G5","E5","D5","C5"];
+/* Ряды мелодии под каждую прогрессию (A-минорная и D-фригийская пентатоники) */
+const MELODY_SCALES = [
+  ["A4","C5","D5","E5","G5","A5","G5","E5","D5","C5"],
+  ["D4","F4","G4","A4","C5","D5","C5","A4","G4","F4"],
+];
+let MELODY_SCALE = MELODY_SCALES[0];   // активный ряд (переключается в scheduleBar)
 
 function startMusic() {
   if (musicNodes) return;   // v4.8: защита от второго AudioContext (двойной клик по кнопке)
@@ -2063,7 +2079,10 @@ function startMusic() {
 
   function scheduleBar() {
     if (!musicNodes) return;
-    const prog = PROG[barIdx % PROG.length];
+    /* v4.9: смена «главной темы» каждые 8 тактов + переключение ряда мелодии */
+    const progSet = PROGS[Math.floor(barIdx / 8) % PROGS.length];
+    MELODY_SCALE = MELODY_SCALES[Math.floor(barIdx / 8) % MELODY_SCALES.length];
+    const prog = progSet[barIdx % progSet.length];
     const t0 = nextT;
 
     /* пэд: плавно перестраиваем осцилляторы на новый аккорд */
@@ -2078,8 +2097,11 @@ function startMusic() {
     padGain.gain.linearRampToValueAtTime(0.085, t0 + 2.0);
     padGain.gain.linearRampToValueAtTime(0.05, t0 + BEAT * 4 - 0.4);
 
-    /* арпеджио перебором: нота аккорда каждые полтакта, лесенкой вверх-вниз */
-    const arpPattern = [0, 1, 2, 1];
+    /* арпеджио перебором: нота аккорда каждые полтакта, лесенкой вверх-вниз;
+       v4.9: два варианта рисунка (через один такт) — перебор не монотонный */
+    const arpPattern = (Math.floor(barIdx / 2) % 2 === 0)
+      ? [0, 1, 2, 1]        // классическая «лесенка»
+      : [2, 1, 0, 1];       // обратный ход — звучит как ответ фразы
     for (let s = 0; s < 4; s++) {
       const note = prog.chord[arpPattern[s]];
       const t = t0 + s * BEAT;
@@ -2208,12 +2230,16 @@ function bumpAutoHide() {
    — «кнопка открытия панели не видна». Теперь она видна и кликабельна
    в любом состоянии: ◀ сворачивает, ▶ раскрывает. */
 btnCollapse.classList.add("floating");
-/* v4.8: плавающая клавиша ставится СЛЕВА от панели (вне её области),
-   а не поверх шапки: left = ширина панели + зазор; пересчитывается при
-   ресайзе и на узких экранах (там панель шире относительно окна). */
+/* v4.9: клавиша — СВЕРХУ панели (а не сбоку, как в v4.8): fixed-кнопка
+   прижата к верхнему правому углу экрана над drawer'ом; top = offset верха
+   панели минус её рамка, right совпадает с отступом панели; при сворачивании
+   остаётся на месте и кликабельна. */
 function positionFloatingBtn() {
-  const w = controlsEl.getBoundingClientRect().width || parseFloat(getComputedStyle(controlsEl).width) || 300;
-  btnCollapse.style.right = (w + 12) + "px";
+  const rect = controlsEl.getBoundingClientRect();
+  /* когда панель свёрнута (translateX за край), берём эталонные константы CSS */
+  const topRef = isNaN(rect.top) || state.panelCollapsed ? 74 : rect.top;
+  btnCollapse.style.top = Math.max(10, topRef - 34) + "px";
+  btnCollapse.style.right = "26px";
 }
 window.addEventListener("resize", positionFloatingBtn);
 positionFloatingBtn();

@@ -336,11 +336,12 @@ input[type="range"] {
    панели управления (раньше наследовала её перекрытие/скрытие).
    Левый нижний угол — противоположный угол от панели (справа). */
 .info-panel {
-  /* v4.8: z-index НИЖЕ панели управления — карточка больше никогда не
-     накладывается на неё; при этом остаётся в левом нижнем углу экрана */
+  /* v4.9: карточка перенесена в ПРАВЫЙ нижний угол — она больше нигде не
+     пересекается с панелью управления (drawer справа сверху) и её клавишей;
+     z-index ниже панели на любой случай. */
   position: fixed;
-  bottom: 18px; left: 18px;
-  top: auto; right: auto;
+  bottom: 18px; right: 18px;
+  top: auto; left: auto;
   width: 300px;
   padding: 20px 20px 16px;
   background: rgba(13, 17, 33, 0.9);
@@ -356,8 +357,8 @@ input[type="range"] {
   transform: translateY(30px);
   pointer-events: none;
 }
-@media (max-width: 760px) {   /* узкий экран: карточка шире, но всё так же слева снизу */
-  .info-panel { width: min(86vw, 300px); bottom: 12px; left: 12px; }
+@media (max-width: 760px) {   /* узкий экран: карточка шире, но всё так же справа снизу */
+  .info-panel { width: min(86vw, 300px); bottom: 12px; right: 12px; }
 }
 
 .close-btn {
@@ -444,8 +445,8 @@ input[type="range"] {
    их стили (.legend / .alien-toast) удалены вместе с DOM-элементами. */
 
 @media (max-width: 760px) {
-  /* v4.7: карточка остаётся в левом нижнем углу и на узких экранах */
-  .info-panel { width: 250px; top: auto; right: auto; bottom: 12px; left: 12px; }
+  /* v4.9: карточка остаётся в правом нижнем углу и на узких экранах */
+  .info-panel { width: 250px; top: auto; left: auto; bottom: 12px; right: 12px; }
   .controls { gap: 10px; padding: 10px; }
   input[type="range"] { width: 120px; }
 }
