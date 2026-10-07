@@ -23,10 +23,12 @@ html, body {
 .topbar {
   position: fixed;
   top: 16px; left: 20px;
-  width: 236px;              /* v7.1: левая колонка: заголовок → карта (208) → инфо-окно */
+  width: 340px;              /* v7.3: шире — карта (208) по центру, инфо-окно во всю ширину колонки */
   z-index: 5;
   pointer-events: none;      /* клики проходят сквозь пустые области */
 }
+.topbar h1 { text-align: center; }   /* v7.3: заголовок по центру расширенной колонки */
+.minimap-wrap { margin-left: auto; margin-right: auto; }  /* v7.3: карта галактики — по центру */
 .topbar .info-panel { pointer-events: auto; }
 /* v7.1: отдельный fixed-блок .topbar-left удалён — карточка теперь внутри
    .topbar в flow, сразу под картой галактики. */
@@ -360,7 +362,7 @@ input[type="range"] {
   display: none;          /* скрытая карточка не занимает место под картой */
 }
 @media (max-width: 760px) {   /* узкий экран: колонка остаётся слева сверху */
-  .topbar { width: min(86vw, 236px); }
+  .topbar { width: min(86vw, 340px); }   /* v7.3: широкая карточка и на мобильных */
   .info-panel { width: 100%; }
 }
 

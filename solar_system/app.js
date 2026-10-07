@@ -8,7 +8,7 @@
 
 /* Версия сборки — ТОЛЬКО номер, без описаний (по требованию).
    Видна в заголовке вкладки, в шапке страницы и в консоли. */
-const VERSION = "v7.2.1";
+const VERSION = "v7.3";
 document.title = `Солнечная система ${VERSION}`;
 console.log(`%c☀️ Солнечная система — сборка: ${VERSION}`, "color:#ffd75e;font-weight:bold");
 /* Версия сборки: бейдж в заголовке панели управления + сноска внизу по центру */
@@ -1468,6 +1468,9 @@ function showAlienInfo(a) {
   infoIcon.style.background = `radial-gradient(circle at 32% 30%, #ffffff, ${a.color} 45%, #101a30)`;
   infoName.textContent = `${a.ship}`;
   infoSize.textContent = "≈ 22 м (диаметр диска)";
+  if (infoDistLabel) {
+    infoDistLabel.textContent = infoDistLabel.dataset.default || "Расстояние от Солнца";
+  }
   infoDist.textContent = "внекаталогный объект — траектория облёта Солнца";
   infoPeriod.textContent = "гиперболический пролёт (не периодическая орбита)";
   infoMoons.textContent = "—";
@@ -1509,6 +1512,9 @@ function frame(now) {
   const alienPosNow = alienState.active ? alienPosition(alienState.active, timeSec) : null;
   if (alienPosNow && alienPosNow.y < sunY()) drawAlien(timeSec);  // НЛО за Солнцем
   drawSun(timeSec);                      // Солнце поверх дальних тел
+  /* v7.3: запоминаем экранную позицию диска Солнца для попаданий курсора
+     (клик по Солнцу открывает карточку с данными о звезде). */
+  SUN._screen = { x: sunX(), y: sunY(), r: sunScreenR };
   /* Ближний слой: тела «перед» Солнцем */
   for (const p of PLANETS) drawPlanet(p, timeSec, "front");
   drawBelt(timeSec, "front");            // ближняя половина пояса
@@ -1812,6 +1818,13 @@ function pickAsteroid(mx, my) {
   return best;
 }
 
+/* v7.3: попадание курсора по диску Солнца (карточка «Солнце») */
+function pickSun(mx, my) {
+  if (!SUN._screen) return null;
+  const d = Math.hypot(mx - SUN._screen.x, my - SUN._screen.y);
+  return d <= Math.max(SUN._screen.r, 16) ? SUN : null;
+}
+
 function pickAny(mx, my) {
   const al = alienState.enabled ? pickAlien(mx, my) : null;
   if (al) return { alien: al };
@@ -1823,6 +1836,9 @@ function pickAny(mx, my) {
   if (a) return { asteroid: a };
   const c = state.showComets ? pickComet(mx, my) : null;
   if (c) return { comet: c };
+  /* Солнце — в конце: тела, летящие ПЕРЕД диском, остаются кликабельными */
+  const s = pickSun(mx, my);
+  if (s) return { sun: s };
   return null;
 }
 
@@ -1831,6 +1847,7 @@ const infoPanel  = document.getElementById("infoPanel");
 const infoIcon   = document.getElementById("infoIcon");
 const infoName   = document.getElementById("infoName");
 const infoSize   = document.getElementById("infoSize");
+const infoDistLabel = document.getElementById("infoDistLabel"); // v7.3: динамическая подпись строки расстояния
 const infoDist   = document.getElementById("infoDist");
 const infoPeriod = document.getElementById("infoPeriod");
 const infoMoons  = document.getElementById("infoMoons");
@@ -1844,10 +1861,38 @@ function formatPeriod(days) {
 }
 
 /* Карточка информации. Аргументы: планета (+опц. луна) ИЛИ объект-астероид */
-function showInfo(p, moon = null, asteroid = null, comet = null) {
+function showInfo(p, moon = null, asteroid = null, comet = null, sun = null) {
+  /* v7.3: подпись строки расстояния — «до планеты» для спутников, иначе «от Солнца».
+     Сохраняем исходную строку по умолчанию (из index.html), чтобы корректно
+     переключать её в обе стороны. */
+  if (infoDistLabel && !infoDistLabel.dataset.default) {
+    infoDistLabel.dataset.default = infoDistLabel.textContent;
+  }
+  const setDistLabel = (t) => { if (infoDistLabel) infoDistLabel.textContent = t; };
+
+  /* v7.3: карточка СОЛНЦА — открывается кликом/тапом по диску Солнца */
+  if (sun) {
+    state.selected = SUN;
+    setDistLabel(infoDistLabel ? infoDistLabel.dataset.default || "Расстояние от Солнца" : null);
+    infoIcon.style.background =
+      "radial-gradient(circle at 32% 30%, #fff8e0, #ffd75e 45%, #ff9d33 80%, #b45a12)";
+    infoName.textContent = "Солнце  ·  Sun";
+    infoSize.textContent = "1 391 000 км (диаметр ≈ 109 диаметров Земли)";
+    infoDist.textContent = "0 а.е. — центр системы (все тела обращаются вокруг него)";
+    infoPeriod.textContent = "≈ 225–250 млн лет — оборот вокруг центра Галактики";
+    infoMoons.textContent = "8 планет + карликовые планеты, спутники, кометы, астероиды";
+    infoType.textContent = "Жёлтый карлик, спектральный класс G2V";
+    infoDesc.textContent =
+      "Ближайшая звезда и единственная источник энергии системы: ~99,86 % её массы. " +
+      "Термоядерный синтез гелия из водорода в ядре (T ≈ 15 млн °C); поверхность (фотосфера) " +
+      "≈ 5 500 °C. Возраст ≈ 4,6 млрд лет, свет до Земли идёт ~8 мин 20 с.";
+    infoPanel.classList.remove("hidden");
+    return;
+  }
   if (comet) {
     const c = comet;
     state.selected = c;
+    setDistLabel(infoDistLabel ? infoDistLabel.dataset.default || "Расстояние от Солнца" : null);
     infoIcon.style.background = `radial-gradient(circle at 32% 30%, #ffffff, ${c.color} 45%, #2a3f66)`;
     infoName.textContent = `${c.name}  ·  ${c.nameEn}`;
     infoSize.textContent = "ядро ≈ 10–37 км (в масштабе не отображается)";
@@ -1863,6 +1908,7 @@ function showInfo(p, moon = null, asteroid = null, comet = null) {
   if (asteroid) {
     const a = asteroid;
     state.selected = a;
+    setDistLabel(infoDistLabel ? infoDistLabel.dataset.default || "Расстояние от Солнца" : null);
     infoIcon.style.background = `radial-gradient(circle at 32% 30%, #efe9df, ${a.color} 55%, ${shadeDown(a.color)})`;
     infoName.textContent = `${a.name}  ·  ${a.nameEn}`;
     infoSize.textContent = `${a.diameterKm.toLocaleString("ru-RU")} км (диаметр)`;
@@ -1877,6 +1923,8 @@ function showInfo(p, moon = null, asteroid = null, comet = null) {
   }
   state.selected = p;
   if (moon) {
+    /* v7.3: для спутников строка расстояния меняет подпись на «до планеты» */
+    setDistLabel("Расстояние до планеты");
     infoIcon.style.background = `radial-gradient(circle at 32% 30%, #f2efe9, ${moon.color} 55%, ${shadeDown(moon.color)})`;
     infoName.textContent = `${moon.name}  ·  ${moon.nameEn}`;
     const diaKm = Math.round(moon.relR * 12742);
@@ -1889,6 +1937,7 @@ function showInfo(p, moon = null, asteroid = null, comet = null) {
     infoDesc.textContent = `${moon.name} — естественный спутник планеты ${p.name}. ` +
       `Нажмите на диск ${p.name.toLowerCase()}, чтобы увидеть данные о планете.`;
   } else {
+    setDistLabel(infoDistLabel ? infoDistLabel.dataset.default || "Расстояние от Солнца" : null);
     infoIcon.style.background = `radial-gradient(circle at 32% 30%, ${p.shades[0]}, ${p.shades[1]} 55%, ${p.shades[2]})`;
     infoName.textContent = `${p.name}  ·  ${p.nameEn}`;
     infoSize.textContent = `${p.diameterKm.toLocaleString("ru-RU")} км`;
@@ -1935,6 +1984,8 @@ canvas.addEventListener("mousemove", (e) => {
       ? `${hit.asteroid.name} — астероид главного пояса (нажмите для подробностей)`
       : hit.moon
       ? `${hit.moon.name} — луна план. ${hit.planet.name} (нажмите для подробностей)`
+      : hit.sun
+      ? `Солнце — нажмите для подробностей`   /* v7.3 */
       : `${hit.planet.name} — нажмите для подробностей`;
     tooltip.style.left = e.clientX + "px";
     tooltip.style.top = e.clientY + "px";
@@ -2003,6 +2054,7 @@ canvas.addEventListener("click", (e) => {
   if (hit && hit.alien) showAlienInfo(hit.alien);
   else if (hit && hit.comet) showInfo(null, null, null, hit.comet);
   else if (hit && hit.asteroid) showInfo(null, null, hit.asteroid);
+  else if (hit && hit.sun) showInfo(null, null, null, null, hit.sun);   // v7.3: карточка Солнца
   else if (hit) showInfo(hit.planet, hit.moon);
   else hideInfo();
 });
@@ -2044,6 +2096,7 @@ canvas.addEventListener("touchstart", (e) => {
     if (hit.alien) showAlienInfo(hit.alien);
     else if (hit.comet) showInfo(null, null, null, hit.comet);
     else if (hit.asteroid) showInfo(null, null, hit.asteroid);
+    else if (hit.sun) showInfo(null, null, null, null, hit.sun);   // v7.3: карточка Солнца (тап)
     else showInfo(hit.planet, hit.moon);
     e.preventDefault();
   } else {
@@ -2417,7 +2470,7 @@ btnCollapse.className = "panel-collapse floating";
 
 /* ---------- v5.0: автоскрытие/автооткрытие УДАЛЁНЫ ----------
    По просьбе пользователя панель меняет состояние ТОЛЬКО от явных действий:
-   клик по клавише ◀/▶, клавиша H, кнопка «Скрыть панель» внизу drawer'а.
+   клик по клавише ◀/▶ или клавиша H (кнопка «Скрыть панель» удалена в v7.3).
    Никаких hover-раскрытий и таймеров, которые «съезжали» сами собой. */
 
 /* v7.0: позиционирование плавающей клавиши — ВЕРХНИЙ ПРАВЫЙ УГОЛ экрана
@@ -2446,24 +2499,9 @@ function setPanelCollapsed(collapsed) {
   positionFloatingBtn();
 }
 
-/* v7.2: кнопка «Скрыть панель» переделана в стиль обычных кнопок панели
-   (ctrl-btn secondary) и перенесена из низа drawer'а в верхнюю часть —
-   сразу после секции управления, чтобы не теряться при прокрутке. */
-const hideBtn = document.createElement("button");
-hideBtn.id = "btnHidePanel";
-hideBtn.className = "ctrl-btn secondary hide-panel-btn";
-hideBtn.textContent = "✕ Скрыть панель";
-hideBtn.title = "Свернуть панель управления (H)";
-const cBody = document.getElementById("controlsBody");
-if (cBody && cBody.firstElementChild) {
-  const wrap = document.createElement("div");
-  wrap.className = "hide-panel-wrap";
-  wrap.appendChild(hideBtn);
-  cBody.insertBefore(wrap, cBody.firstElementChild);
-} else if (cBody) {
-  cBody.appendChild(hideBtn);
-}
-hideBtn.addEventListener("click", () => setPanelCollapsed(true));
+/* v7.3: кнопка «✕ Скрыть панель» УДАЛЕНА из панели управления по просьбе
+   пользователя (в DOM её больше нет — код создания удалён). Панель
+   сворачивается/раскрывается плавающей стрелкой ▲/▼ или клавишей H. */
 
 btnCollapse.addEventListener("click", () => {
   setPanelCollapsed(!state.panelCollapsed);
@@ -2484,8 +2522,7 @@ const HOVER_OPEN_DELAY_MS = 120;
 let hoverOpenTimer = null;
 window.addEventListener("mousemove", (e) => {
   if (!state.panelCollapsed) return;              // открытая панель не трогаем
-  /* v7.2: не раскрывать, пока курсор занято чем-то другим — стрелкой или
-     контролами панели (у кнопки «Скрыть панель» свой обработчик клика). */
+  /* v7.2: не раскрывать, пока курсор занят стрелкой или контролами панели. */
   const t = e.target;
   if (t && t.closest && t.closest("#btnCollapsePanel, .controls")) return;
   if (e.clientX < window.innerWidth - HOVER_EDGE_PX) {
