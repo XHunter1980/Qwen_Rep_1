@@ -8,7 +8,7 @@
 
 /* Версия сборки — ТОЛЬКО номер, без описаний (по требованию).
    Видна в заголовке вкладки, в шапке страницы и в консоли. */
-const VERSION = "v7.4.1";
+const VERSION = "v7.5.1";
 document.title = `Солнечная система ${VERSION}`;
 console.log(`%c☀️ Солнечная система — сборка: ${VERSION}`, "color:#ffd75e;font-weight:bold");
 /* Версия сборки: бейдж в заголовке панели управления + сноска внизу по центру */
@@ -85,6 +85,7 @@ const state = {
   showMoons: true,
   showBelt: true,
   showComets: true,
+  showDwarfs: true,            // v7.5: карликовые планеты (Плутон, Эрида, Макемаке, Гаумеа) — клавиша D
   zoom: 1,                       // масштаб вида (0.6× … 8×), колесо мыши / слайдер
   panX: 0, panY: 0,              // панорамирование: смещение центра системы (px)
   music: false,                  // v4.8: выключена по умолчанию (см. startMusic)
@@ -963,8 +964,11 @@ const BELT_ASTEROIDS = [
   {
     name: "Церера", nameEn: "1 Ceres",
     mainAU: 2.77, ecc: 0.079, periodDays: 1655, diameterKm: 946, M0: 120, omegaDeg: 73, drawR: 5,
-    color: "#b9b3a8", type: "Карликовая планета (главный пояс)",
+    color: "#b9b3a8", type: "Карликовая планета (главный пояс)", dwarf: true,
+    moons: 1, moonNote: "Идда",
     desc: "Крупнейший объект пояса астероидов и единственная карликовая планета внутри орбиты Нептуна. Содержит ~1/3 массы всего пояса; на поверхности — криовулканы и солёные отложения.",
+    /* Спутник Идда (d ≈ 270 км) — визуальная точка-компаньон */
+    satellites: [{ name: "Идда", periodDays: 4.57, M0: 60, color: "#cfcac2" }],
   },
   {
     name: "Веста", nameEn: "4 Vesta",
@@ -1114,16 +1118,33 @@ function drawBelt(timeSec, layer) {
     g.addColorStop(0.55, a.color);
     g.addColorStop(1, shadeDown(a.color));
     ctx.fillStyle = g;
-    ctx.beginPath();
-    for (let i = 0; i <= 9; i++) {
-      const th = (i / 9) * Math.PI * 2;
-      const rr = R * (0.86 + 0.14 * Math.sin(th * 3 + a.M0));   // лёгкая «камнистость» силуэта
-      const px = pos.x + Math.cos(th) * rr;
-      const py = pos.y + Math.sin(th) * rr;
-      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    /* v7.5: карликовые планеты (Церера) — ГЛАДКИЙ круглый диск как у планет:
+       они гидростатически округлые; обычные астероиды остаются «камнистыми». */
+    if (a.dwarf) {
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, R, 0, Math.PI * 2);
+      ctx.fill();
+      if (a.satellites && a.satellites.length) {   // спутник-компаньон (Идда у Цереры)
+        const ma = a.satellites[0];
+        const mang = circleAngle(state.simDays, ma.periodDays, (ma.M0 * Math.PI) / 180);
+        const mpt = circleScreenPoint(pos.x, pos.y, R + 9, mang, TILT + 0.3);
+        ctx.fillStyle = ma.color;
+        ctx.beginPath();
+        ctx.arc(mpt.x, mpt.y, Math.max(1.6, R * 0.28), 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else {
+      ctx.beginPath();
+      for (let i = 0; i <= 9; i++) {
+        const th = (i / 9) * Math.PI * 2;
+        const rr = R * (0.86 + 0.14 * Math.sin(th * 3 + a.M0));   // лёгкая «камнистость» силуэта
+        const px = pos.x + Math.cos(th) * rr;
+        const py = pos.y + Math.sin(th) * rr;
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.fill();
     }
-    ctx.closePath();
-    ctx.fill();
 
     if (state.showLabels) {
       ctx.fillStyle = isSel ? "#ffd76a" : "rgba(205, 200, 190, 0.85)";
@@ -1133,6 +1154,162 @@ function drawBelt(timeSec, layer) {
     }
   }
   ctx.restore();
+}
+
+/* =========================================================
+   v7.5: КАРЛИКОВЫЕ ПЛАНЕТЫ ЗА ОРБИТОЙ НЕПТУНА (пояс Койпера)
+   Плутон, Эрида, Макемаке и Гаумеа — реальные большие полуоси,
+   эксцентриситеты (у Плутона e=0.249 — орбита заходит ВНУТРЬ
+   нептуновой), периоды обращения и диаметры. Движение — по тем же
+   эллипсам Кеплера (Солнце в фокусе) или упрощённым кругам, что и у
+   остальных тел; слой включается чекбоксом «🪐 Карликовые планеты»
+   или клавишей D. При зуме >1× подписи показываются даже при
+   выключенных названиях — тела далеко и их нужно находить глазами.
+   ========================================================= */
+const DWARF_PLANETS = [
+  {
+    name: "Плутон", nameEn: "Pluto",
+    orbitAU: 39.48, ecc: 0.249, periodDays: 90560, diameterKm: 2377,
+    phase0: 0.5, omegaDeg: 224, drawR: 5, realRel: 0.186,
+    color: "#cbb59b", shades: ["#e6d7c3", "#c3ab90", "#7c6650"],
+    type: "Карликовая планета ( plutoid, пояс Койпера)",
+    moons: 5, moonNote: "Харон (двойная система), Никта, Гидра, Кербер, Стикс",
+    desc: "До 2006 г. считался девятой планетой. Орбита сильно вытянута и наклонена (17°): на участке перигелия (29.7 а.е.) Плутон бывает БЛИЖЕ к Солнцу, чем Нептун, но резонанс 3:2 не даёт им столкнуться. Плутон и Харон обращаются вокруг общего центра масс — почти двойная планета.",
+  },
+  {
+    name: "Эрида", nameEn: "Eris",
+    orbitAU: 67.8, ecc: 0.44, periodDays: 202700, diameterKm: 2326,
+    phase0: 2.4, omegaDeg: 151, drawR: 5, realRel: 0.183,
+    color: "#d7dde6", shades: ["#f0f3f8", "#ccd4df", "#828d9d"],
+    type: "Карликовая планета (scattered disk)",
+    moons: 1, moonNote: "Дисномия",
+    desc: "Самая массивная карликовая планета — именно её открытие в 2005 г. привело к пересмотрению термина «планета» и понижению Плутона. Афелий ~97 а.е.: одна из самых удалённых известных малых тел; поверхность покрыта метановым льдом.",
+  },
+  {
+    name: "Макемаке", nameEn: "Makemake",
+    orbitAU: 45.8, ecc: 0.16, periodDays: 112100, diameterKm: 1430,
+    phase0: 4.1, omegaDeg: 296, drawR: 4, realRel: 0.112,
+    color: "#d98f7a", shades: ["#eeb39d", "#cf8471", "#8a4a3a"],
+    type: "Карликовая планета (классический пояс Койпера)",
+    moons: 1, moonNote: "MK 2 (открыт 2015 г.)",
+    desc: "Третья по яркости объект пояса Койпера после Плутона и Эриды. Поверхность из метана и этана (красноватый оттенок); атмосферы нет, но в афелии метан, предположительно, конденсируется инеем.",
+  },
+  {
+    name: "Гаумеа", nameEn: "Haumea",
+    orbitAU: 43.2, ecc: 0.19, periodDays: 103500, diameterKm: 1560,
+    phase0: 5.6, omegaDeg: 212, drawR: 4, realRel: 0.122,
+    color: "#cfd8dd", shades: ["#eef4f7", "#c4cfd6", "#7f8c94"],
+    type: "Карликовая планета (вытянутое тело, семейство Гаумеа)",
+    moons: 2, moonNote: "Хиака и Намака (+ кольцевая система)",
+    desc: "Вращается вокруг оси за рекордные ~3,9 часа — из-за этого вытянута в сигару (~1 560 × 1 000 км). Первая карликовая планета с обнаруженным кольцом и двумя ледяными спутниками; яркая поверхность — водяной лёд.",
+  },
+];
+
+/* Эллиптическая позиция тела по элементам (общий код планет/астероидов/койперов) */
+function ellipsePosByElements(o, cx, cy) {
+  const aPx = scaleAUtoPx(o.orbitAU);
+  const bPx = aPx * Math.sqrt(1 - o.ecc * o.ecc);
+  const Mraw = circleAngle(state.simDays, o.periodDays, o.phase0);
+  const Ecc = keplerSolve(normalizeAngle(Mraw), o.ecc);
+  const rAU = o.orbitAU * (1 - o.ecc * Math.cos(Ecc));
+  const ox = Math.cos(Ecc) * aPx - aPx * o.ecc;
+  const oy = Math.sin(Ecc) * bPx;
+  const w = (o.omegaDeg * Math.PI) / 180;
+  const rx = ox * Math.cos(w) - oy * Math.sin(w);
+  const ry = (ox * Math.sin(w) + oy * Math.cos(w)) * TILT;
+  return { x: cx + rx, y: cy + ry, rAU };
+}
+
+function dwarfPosition(d) {
+  if (state.orbitMode === "circle") {
+    const rPx = scaleAUtoPx(d.orbitAU);
+    const pt = circleScreenPoint(sunX(), sunY(), rPx,
+      circleAngle(state.simDays, d.periodDays, d.phase0), TILT);
+    return { x: pt.x, y: pt.y, rAU: d.orbitAU };
+  }
+  return ellipsePosByElements(d, sunX(), sunY());
+}
+
+/* Пунктирные орбиты карликовых планет (при включённом слое и орбитах) */
+function drawDwarfOrbits() {
+  if (!state.showDwarfs || !state.showOrbits) return;
+  ctx.save();
+  ctx.strokeStyle = "rgba(150, 175, 225, 0.16)";
+  ctx.setLineDash([4, 6]);
+  ctx.lineWidth = 1;
+  for (const d of DWARF_PLANETS) {
+    const aPx = scaleAUtoPx(d.orbitAU);
+    if (state.orbitMode === "circle") {
+      ctx.beginPath();
+      ctx.ellipse(sunX(), sunY(), aPx, aPx * TILT, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    } else {
+      const bPx = aPx * Math.sqrt(1 - d.ecc * d.ecc);
+      const w = (d.omegaDeg * Math.PI) / 180;
+      ctx.save();
+      ctx.translate(sunX(), sunY());
+      ctx.rotate(w);
+      ctx.beginPath();
+      ctx.ellipse(-aPx * d.ecc, 0, aPx, bPx * TILT, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+  ctx.restore();
+}
+
+function drawDwarf(d, timeSec, layer) {
+  const pos = dwarfPosition(d);
+  const R = state.realScale ? bodyRealPx(d.diameterKm) : d.drawR;
+  d._screen = { x: pos.x, y: pos.y, r: R };
+  const behind = isBehindSun(pos.rAU, pos.y);
+  if ((layer === "back") !== behind) return;
+  if (behind && Math.hypot(pos.x - sunX(), pos.y - sunY()) < sunScreenR + R * 0.35) return;
+
+  const isSel = state.selected === d;
+  const isHov = state.hovered === d;
+  if (isSel || isHov) {
+    ctx.save();
+    ctx.strokeStyle = isSel ? "rgba(255, 215, 106, 0.9)" : "rgba(160, 190, 255, 0.6)";
+    ctx.lineWidth = isSel ? 2 : 1.5;
+    ctx.setLineDash(isSel ? [] : [3, 4]);
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, R + 6 + Math.sin(timeSec * 4) * 1.5, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  const sunDir = Math.atan2(pos.y - sunY(), pos.x - sunX());
+  const gx = pos.x - Math.cos(sunDir) * R * 0.4;
+  const gy = pos.y - Math.sin(sunDir) * R * 0.4;
+  const g = ctx.createRadialGradient(gx, gy, R * 0.15, pos.x, pos.y, R * 1.15);
+  g.addColorStop(0, d.shades[0]);
+  g.addColorStop(0.55, d.shades[1]);
+  g.addColorStop(1, d.shades[2]);
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(pos.x, pos.y, R, 0, Math.PI * 2);
+  ctx.fill();
+
+  /* Подпись: если названия включены — всегда; иначе — при крупном зуме (>1.2×),
+     чтобы далёкие тела можно было опознать, приближая картину. */
+  if (state.showLabels || state.zoom > 1.2) {
+    ctx.fillStyle = isSel ? "#ffd76a" : "rgba(190, 205, 235, 0.8)";
+    ctx.font = (isSel ? "600 " : "") + "11px 'Segoe UI', sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(d.name, pos.x, pos.y - R - 7);
+  }
+}
+
+function pickDwarf(mx, my) {
+  let best = null, bestDist = Infinity;
+  for (const d of DWARF_PLANETS) {
+    if (!d._screen) continue;
+    const dist = Math.hypot(mx - d._screen.x, my - d._screen.y);
+    const hitR = Math.max(d._screen.r + 6, 13);
+    if (dist <= hitR && dist < bestDist) { best = d; bestDist = dist; }
+  }
+  return best;
 }
 
 /* layer === "back" — планета на дальней половине вида (за Солнцем): рисуется
@@ -1527,10 +1704,12 @@ function frame(now) {
   ctx.scale(state.zoom, state.zoom);
   ctx.translate(-sunX(), -sunY());
   drawOrbits();                          // орбиты планет: эллипсы Кеплера или упрощённые круги
+  drawDwarfOrbits();                     // v7.5: пунктирные орбиты карликовых планет (пояс Койпера)
   drawCometOrbits();                     // эллиптические орбиты комет (пунктир)
   /* Дальний слой: тела «за» Солнцем — их перекроет диск Солнца */
   drawBelt(timeSec, "back");             // дальняя половина пояса астероидов
   for (const p of PLANETS) drawPlanet(p, timeSec, "back");
+  if (state.showDwarfs) for (const d of DWARF_PLANETS) drawDwarf(d, timeSec, "back");   // v7.5
   drawComets(timeSec, "back");           // кометы за Солнцем
   const alienPosNow = alienState.active ? alienPosition(alienState.active, timeSec) : null;
   if (alienPosNow && alienPosNow.y < sunY()) drawAlien(timeSec);  // НЛО за Солнцем
@@ -1540,6 +1719,7 @@ function frame(now) {
   SUN._screen = { x: sunX(), y: sunY(), r: sunScreenR };
   /* Ближний слой: тела «перед» Солнцем */
   for (const p of PLANETS) drawPlanet(p, timeSec, "front");
+  if (state.showDwarfs) for (const d of DWARF_PLANETS) drawDwarf(d, timeSec, "front");   // v7.5
   drawBelt(timeSec, "front");            // ближняя половина пояса
   drawComets(timeSec, "front");          // кометы перед Солнцем: ядро + кома + хвост
   if (alienPosNow && alienPosNow.y >= sunY()) drawAlien(timeSec); // НЛО перед Солнцем
@@ -1855,6 +2035,9 @@ function pickAny(mx, my) {
   if (pm) return { planet: pm.planet, moon: pm.moon };
   const p = pickPlanet(mx, my);
   if (p) return { planet: p, moon: null };
+  /* v7.5: карликовые планеты — кликабельны при включённом слое */
+  const d = state.showDwarfs ? pickDwarf(mx, my) : null;
+  if (d) return { dwarf: d };
   const a = state.showBelt ? pickAsteroid(mx, my) : null;
   if (a) return { asteroid: a };
   const c = state.showComets ? pickComet(mx, my) : null;
@@ -1881,6 +2064,29 @@ function formatPeriod(days) {
   if (days < 365) return `${Math.round(days)} сут`;
   const years = days / 365.25;
   return `${years.toFixed(years >= 10 ? 1 : 2)} лет (${Math.round(days)} сут)`;
+}
+
+/* v7.5: карточка КАРЛИКОВОЙ ПЛАНЕТЫ пояса Койпера (Плутон, Эрида, Макемаке,
+   Гаумеа). Отдельная функция: у этих тел свой набор полей и своя строка
+   расстояния («от Солнца», большая полуось + перигелий/афелий). */
+function showDwarfInfo(d) {
+  state.selected = d;
+  /* подпись строки расстояния — как в showInfo: дефолтная «от Солнца» */
+  if (infoDistLabel && !infoDistLabel.dataset.default) {
+    infoDistLabel.dataset.default = infoDistLabel.textContent;
+  }
+  if (infoDistLabel) infoDistLabel.textContent = infoDistLabel.dataset.default || "Расстояние от Солнца";
+  infoIcon.style.background = `radial-gradient(circle at 32% 30%, ${d.shades[0]}, ${d.shades[1]} 55%, ${d.shades[2]})`;
+  infoName.textContent = `${d.name}  ·  ${d.nameEn}`;
+  infoSize.textContent = `${d.diameterKm.toLocaleString("ru-RU")} км (диаметр)`;
+  const peri = d.orbitAU * (1 - d.ecc), aph = d.orbitAU * (1 + d.ecc);
+  infoDist.textContent = `${d.orbitAU} а.е. (${Math.round(d.orbitAU * 149.6).toLocaleString("ru-RU")} млн км) — большая полуось`;
+  const yr = d.periodDays / 365.25;
+  infoPeriod.textContent = `${yr.toFixed(1)} лет (${Math.round(d.periodDays).toLocaleString("ru-RU")} сут) · e=${d.ecc}, перигелий ${peri.toFixed(1)} / афелий ${aph.toFixed(1)} а.е.`;
+  infoMoons.textContent = d.moons === 0 ? "нет" : `${d.moons} — ${d.moonNote}`;
+  infoType.textContent = d.type;
+  infoDesc.textContent = d.desc;
+  infoPanel.classList.remove("hidden");
 }
 
 /* Карточка информации. Аргументы: планета (+опц. луна) ИЛИ объект-астероид */
@@ -1996,7 +2202,7 @@ function toWorld(mx, my) {
 canvas.addEventListener("mousemove", (e) => {
   const wpt = toWorld(e.clientX, e.clientY);
   const hit = pickAny(wpt.x, wpt.y);
-  state.hovered = hit ? (hit.alien || hit.comet || hit.asteroid || hit.planet) : null;
+  state.hovered = hit ? (hit.alien || hit.comet || hit.asteroid || hit.dwarf || hit.planet) : null;
   canvas.classList.toggle("hovering", !!hit);
   if (hit) {
     tooltip.textContent = hit.alien
@@ -2005,6 +2211,8 @@ canvas.addEventListener("mousemove", (e) => {
       ? `${hit.comet.name} — комета (нажмите для подробностей)`
       : hit.asteroid
       ? `${hit.asteroid.name} — астероид главного пояса (нажмите для подробностей)`
+      : hit.dwarf
+      ? `${hit.dwarf.name} — карликовая планета (нажмите для подробностей)`
       : hit.moon
       ? `${hit.moon.name} — луна план. ${hit.planet.name} (нажмите для подробностей)`
       : hit.sun
@@ -2077,13 +2285,14 @@ canvas.addEventListener("click", (e) => {
      обработчики кликов на document перехватывали клики по контролам и
      карточка Солнца/планеты закрывалась сразу после открытия. */
   if (e.target && e.target.closest &&
-      e.target.closest(".controls, .info-panel, #btnCollapsePanel")) return;
+      e.target.closest(".controls, .info-panel, #btnCollapsePanel, #btnFullscreen")) return;
   const wpt = toWorld(e.clientX, e.clientY);
   const hit = pickAny(wpt.x, wpt.y);
   if (hit && hit.alien) showAlienInfo(hit.alien);
   else if (hit && hit.comet) showInfo(null, null, null, hit.comet);
   else if (hit && hit.asteroid) showInfo(null, null, hit.asteroid);
   else if (hit && hit.sun) showInfo(null, null, null, null, hit.sun);   // v7.3: карточка Солнца
+  else if (hit && hit.dwarf) showDwarfInfo(hit.dwarf);                  // v7.5: карликовая планета
   else if (hit) showInfo(hit.planet, hit.moon);
   else hideInfo();
 });
@@ -2129,6 +2338,7 @@ canvas.addEventListener("touchstart", (e) => {
     else if (hit.comet) showInfo(null, null, null, hit.comet);
     else if (hit.asteroid) showInfo(null, null, hit.asteroid);
     else if (hit.sun) showInfo(null, null, null, null, hit.sun);   // v7.3: карточка Солнца (тап)
+    else if (hit.dwarf) showDwarfInfo(hit.dwarf);                  // v7.5: карликовая планета (тап)
     else showInfo(hit.planet, hit.moon);
     e.preventDefault();
   } else {
@@ -2171,40 +2381,45 @@ function updatePlayButton() {
 }
 
 /* =========================================================
-   v7.4: ПОЛНОЭКРАННЫЙ РЕЖИМ (Fullscreen API)
-   Три способа включить: кнопка «⛶ Во весь экран» в панели,
-   клавиша F (или А в русской раскладке), двойной клик по космосу.
-   Выход — Esc или повторное нажатие кнопки/F. Кнопка меняет
-   подпись при смене состояния через событие fullscreenchange.
+   v7.5: ПОЛНОЭКРАННЫЙ РЕЖИМ (Fullscreen API) — ПЕРЕДЕЛАНО
+   Раньше кнопка жила ВНУТРИ панели управления и при клике ничего не
+   происходило (обработчик навешивался позже/не на тот элемент). Теперь:
+   • кнопка ⛶ — плавающая, РЯДОМ со стрелкой сворачивания панели ▲/▼
+     (тот же верхний правый угол, слева от неё), видна ВСЕГДА — и при
+     свёрнутой, и при раскрытой панели;
+   • обработчик click вешается сразу при создании кнопки;
+   • дополнительно: клавиша F (или А в русской раскладке) и двойной
+     клик по космосу; выход — Esc, F или повторный клик по кнопке.
    ========================================================= */
 let btnFs = document.getElementById("btnFullscreen");
 if (!btnFs) {
   btnFs = document.createElement("button");
   btnFs.id = "btnFullscreen";
-  btnFs.className = "ctrl-btn";
-  /* Вставляем сразу за кнопкой «⟲ Сброс» — в тот же ряд управления */
-  const resetBtn = document.getElementById("btnReset");
-  if (resetBtn && resetBtn.parentElement) {
-    resetBtn.insertAdjacentElement("afterend", btnFs);
-  } else {
-    const bodyEl = document.getElementById("controlsBody");
-    if (bodyEl) bodyEl.appendChild(btnFs);
-  }
+  document.body.appendChild(btnFs);
 }
+btnFs.className = "panel-collapse floating fs-toggle";
+btnFs.addEventListener("click", (e) => {
+  e.preventDefault();
+  e.stopPropagation();          // не отдаём клик canvas/документу
+  toggleFullscreen();
+});
 function isFullscreen() {
   return !!(document.fullscreenElement || document.webkitFullscreenElement);
 }
 function updateFsButton() {
-  btnFs.textContent = isFullscreen() ? "🗗 Выйти из экрана" : "⛶ Во весь экран";
+  btnFs.textContent = isFullscreen() ? "🗗" : "⛶";
   btnFs.title = isFullscreen()
     ? "Выйти из полноэкранного режима (Esc или F)"
-    : "Полноэкранный режим (F или двойной клик по космосу)";
+    : "Во весь экран (F или двойной клик по космосу)";
 }
 function toggleFullscreen() {
   try {
     if (isFullscreen()) {
       const exit = document.exitFullscreen || document.webkitExitFullscreen;
-      if (exit) exit.call(document);
+      if (exit) {
+        const p = exit.call(document);
+        if (p && typeof p.catch === "function") p.catch(() => {});
+      }
     } else {
       const el = document.documentElement;
       const req = el.requestFullscreen || el.webkitRequestFullscreen;
@@ -2216,7 +2431,7 @@ function toggleFullscreen() {
   } catch (_) { /* Fullscreen недоступен — тихо игнорируем */ }
 }
 ["fullscreenchange", "webkitfullscreenchange"].forEach((ev) =>
-  document.addEventListener(ev, () => { updateFsButton(); resize(); })
+  document.addEventListener(ev, () => { updateFsButton(); positionFloatingBtn(); resize(); })
 );
 updateFsButton();
 
@@ -2567,6 +2782,12 @@ function positionFloatingBtn() {
   const panelTop = controlsEl ? controlsEl.getBoundingClientRect().top : 74;
   btnCollapse.style.right = "14px";
   btnCollapse.style.top = Math.round(panelTop - 64) + "px";
+  /* v7.5: кнопка «⛶ Во весь экран» — в ТОМ ЖЕ ряду, слева от стрелки ▲/▼
+     (ряд по 38px + зазор 8px). Видна всегда, в т.ч. при свёрнутой панели. */
+  if (typeof btnFs !== "undefined" && btnFs) {
+    btnFs.style.right = "60px";
+    btnFs.style.top = Math.round(panelTop - 64) + "px";
+  }
 }
 window.addEventListener("resize", positionFloatingBtn);
 
@@ -2661,6 +2882,13 @@ document.getElementById("chkComets").addEventListener("change", (e) => {
   state.showComets = e.target.checked;
   if (!state.showComets && state.selected && state.selected.aAU) hideInfo();  // скрыть карточку кометы
 });
+/* v7.5: слой карликовых планет (Плутон, Эрида, Макемаке, Гаумеа) */
+document.getElementById("chkDwarfs").addEventListener("change", (e) => {
+  state.showDwarfs = e.target.checked;
+  /* карточка закрыта, если снята галочка, а выбрана именно карликовая планета */
+  if (!state.showDwarfs && state.selected && state.selected.orbitAU && state.selected.nameEn &&
+      DWARF_PLANETS.includes(state.selected)) hideInfo();
+});
 document.getElementById("chkAliens").addEventListener("change", (e) => {
   alienState.enabled = e.target.checked;
   if (!alienState.enabled) {
@@ -2708,6 +2936,13 @@ window.addEventListener("keydown", (e) => {
     const chk = document.getElementById("chkComets");
     chk.checked = state.showComets;
     if (!state.showComets && state.selected && state.selected.aAU) hideInfo();
+  } else if ((e.key === "d" || e.key === "D" || e.key === "в" || e.key === "В") &&
+             !e.ctrlKey && !e.metaKey && !e.altKey) {
+    /* v7.5: слой карликовых планет (D / «в» в русской раскладке) */
+    state.showDwarfs = !state.showDwarfs;
+    const chk = document.getElementById("chkDwarfs");
+    chk.checked = state.showDwarfs;
+    if (!state.showDwarfs && DWARF_PLANETS.includes(state.selected)) hideInfo();
   } else if ((e.key === "o" || e.key === "O" || e.key === "щ" || e.key === "Щ") &&
              !e.ctrlKey && !e.metaKey && !e.altKey) {
     toggleOrbitMode();   // переключение эллипсы Кеплера ↔ упрощённые круги
