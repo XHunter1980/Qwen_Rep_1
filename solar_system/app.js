@@ -8,7 +8,7 @@
 
 /* Версия сборки — ТОЛЬКО номер, без описаний (по требованию).
    Видна в заголовке вкладки, в шапке страницы и в консоли. */
-const VERSION = "v7.5.1";
+const VERSION = "v7.6.1";
 document.title = `Солнечная система ${VERSION}`;
 console.log(`%c☀️ Солнечная система — сборка: ${VERSION}`, "color:#ffd75e;font-weight:bold");
 /* Версия сборки: бейдж в заголовке панели управления + сноска внизу по центру */
@@ -142,14 +142,53 @@ function normalizeAngle(a) {
   return x;
 }
 
+/* v7.6: ЕДИНАЯ функция позиции тела на ЭЛЛИПСЕ КЕПЛЕРА.
+
+   КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: раньше координаты тела считались как
+   «поворот на ω уже СКЛОНЁННЫХ экраных координат»:
+      rx = ox·cosω − oy·sinω;  ry = (ox·sinω + oy·cosω)·TILT.
+   Матрица [cosω −sinω; sinω cosω]·diag(1, TILT) НЕ КОММУТИРУЕТ с
+   diag(1, TILT), поэтому траектория точки отличалась от эллипса,
+   который рисовал drawOrbits(): ctx.translate/rotate/scale(1,TILT) +
+   ellipse(−a·e, 0, a, b·TILT) порождает АФФИННЫЙ ОБРАЗ оригинального
+   эллипса (правильный наклонённый эллипс с фокусом в Солнце), а старая
+   формула давала ДРУГУЮ кривую — планеты «летели мимо» своих орбит.
+   Теперь тело вычисляется ТОЙ ЖЕ самой аффинной матрицей, что и контур:
+      P = Sun + R(ω) · (x', y'·TILT),  где (x', y') — точка эллипса
+      в системе перигелия с фокусом в начале координат.
+   Это гарантирует математическое совпадение траектории с отрисованным
+   эллипсом при любом ω и TILT.
+
+   Возвращает { x, y, rAU }: экранная позиция + НАСТОЯЩЕЕ расстояние тела
+   до Солнца в а.е. (r = a(1 − e·cosE)) — для глубины sortKey. */
+function keplerEllipsePos(o, cx, cy) {
+  const aPx = scaleAUtoPx(o.orbitAU);
+  const bPx = aPx * Math.sqrt(1 - o.ecc * o.ecc);
+  const Mraw = circleAngle(state.simDays, o.periodDays, o.phase0);
+  /* Нормализация M в (−π, +π] без потери знака: выражение (M+π)%2π−π на
+     отрицательных углах давало неверный знак sin(E) — «скачки» тела через
+     ось перигелия при прохождении Солнца. */
+  const Ecc = keplerSolve(normalizeAngle(Mraw), o.ecc);
+  const rAU = o.orbitAU * (1 - o.ecc * Math.cos(Ecc));   // истинное расстояние до Солнца
+  // Точка эллипса в системе, где перигелий направлен по +x, фокус (Солнце) — (0,0):
+  const px = Math.cos(Ecc) * aPx - aPx * o.ecc;
+  const py = Math.sin(Ecc) * bPx;
+  // Тот же порядок трансформаций, что у ctx в drawOrbits: сначала наклон вида (TILT),
+  // затем поворот на долготу перигелия ω. Так точка ЛЕЖИТ на нарисованном эллипсе.
+  const w = (o.omegaDeg * Math.PI) / 180;
+  const cw = Math.cos(w), sw = Math.sin(w);
+  const sy = py * TILT;
+  return { x: cx + px * cw - sy * sw, y: cy + px * sw + sy * cw, rAU };
+}
+
 /* Позиция планеты — зависит от выбранного режима орбит:
    • "ellipse" — РЕАЛЬНЫЙ эллипс Кеплера (a, e из данных планет, без
      преувеличений), Солнце строго в ФОКУСЕ; движение неравномерно:
      быстрее в перигелии, медленнее в афелии (II закон Кеплера).
+     В v7.6 траектория СОВПАДАЕТ с отрисованным контуром орбиты
+     (общая матрица трансформации — см. keplerEllipsePos).
    • "circle"  — упрощённая круговая орбита с радиусом = a, Солнце в центре.
-   Возвращает { x, y, rAU }: экранная позиция + НАСТОЯЩЕЕ расстояние тела
-   до Солнца в а.е. (r = a(1 − e·cosE)) — именно по нему определяется,
-   «за» тело Солнцем или «перед» ним (глубина sortKey). */
+   Возвращает { x, y, rAU }. */
 function planetPosition(p) {
   if (state.orbitMode === "circle") {
     const rPx = scaleAUtoPx(p.orbitAU);
@@ -157,23 +196,7 @@ function planetPosition(p) {
       circleAngle(state.simDays, p.periodDays, p.phase0), TILT);
     return { x: pt.x, y: pt.y, rAU: p.orbitAU };
   }
-  // Эллипс Кеплера: большая полуось a и эксцентриситет e — реальные.
-  // Средней аномалией M служит угол обращения по времени (линейно растёт
-  // со временем — это и есть «равномерное усреднённое» движение).
-  const aPx = scaleAUtoPx(p.orbitAU);
-  const bPx = aPx * Math.sqrt(1 - p.ecc * p.ecc);
-  const Mraw = circleAngle(state.simDays, p.periodDays, p.phase0);
-  /* Нормализация M в (−π, +π] без потери знака: выражение (M+π)%2π−π на
-     отрицательных углах давало неверный знак sin(E) — «скачки» тела через
-     ось перигелия при прохождении Солнца. */
-  const Ecc = keplerSolve(normalizeAngle(Mraw), p.ecc);
-  const rAU = p.orbitAU * (1 - p.ecc * Math.cos(Ecc));   // истинное расстояние до Солнца
-  const ox = Math.cos(Ecc) * aPx - aPx * p.ecc;   // фокус (Солнце) в начале координат
-  const oy = Math.sin(Ecc) * bPx;
-  const w = (p.omegaDeg * Math.PI) / 180;       // ориентация эллипса на плоскости
-  const rx = ox * Math.cos(w) - oy * Math.sin(w);
-  const ry = (ox * Math.sin(w) + oy * Math.cos(w)) * TILT;
-  return { x: sunX() + rx, y: sunY() + ry, rAU };
+  return keplerEllipsePos(p, sunX(), sunY());
 }
 
 /* Глубина тела: единый критерий — экранная геометрия вида (см. isBehindSun):
@@ -415,6 +438,11 @@ function keplerSolve(M, e) {
    ~10.5 ч (Хейл-Боппа) и ~13.5 ч (NEOWISE) реального времени при 1× —
    кометы заметно медленнее внешних планет на всей дуге, включая перигелий. */
 const COMET_SLOW = 160;
+/* v7.6: ОБЩАЯ ЭКРАННАЯ ПОЛУОСЬ комет. Контур орбиты (drawCometOrbits) и
+   само тело (cometPosition) ОБЯЗАНЫ использовать одно и то же значение,
+   иначе траектория «уезжает» с нарисованного эллипса. Раньше в v7.5 здесь
+   стоял clamp aPx ≤ availPx()*0.95 — контур рисовался по НЕсжатой шкале,
+   а тело шло по сжатой: визуально «объекты движутся не по эллипсам». */
 /* Эквивалент «1 а.е.» в пикселях при текущем экране (из scaleAUtoPx(1)). */
 function auPx() {
   return scaleAUtoPx(1);
@@ -448,14 +476,20 @@ function cometPosition(c) {
      тусклое ядро; раньше rAU считался по настоящему эллипсу (r до 709 а.е.),
      из-за чего act≈0 и комета «исчезала/скакала» вблизи Солнца. */
   const rAU = (aPx / auPx()) * (1 - eVis * Math.cos(Ecc));
-  // координаты в плоскости орбиты (фокус — Солнце — в центре экрана)
+  // координаты в плоскости орбиты (фокус — Солнце — в начале координат)
   const ox = Math.cos(Ecc) * aPx - aPx * eVis;   // ось к перигелию
   const oy = Math.sin(Ecc) * bPx;
-  // поворот на долготу перигелия ω и «наклон» вида сверху вниз
+  /* v7.6: ПОРЯДОК ТРАНСФОРМАЦИЙ КАК У КОНТУРА ОРБИТЫ. drawCometOrbits()
+     рисует эллипс через ctx.translate(sun) → rotate(ω) → scale(1, TILT),
+     т.е. применяет матрицу M = R(ω)·diag(1, TILT). Старый код сначала
+     наклонял Y (умножал обе компоненты на TILT после поворота), что не
+     равно M: траектория «уезжала» с нарисованного эллипса. Теперь точка
+     считается как px' = x, py' = y·TILT и ПОВОРАЧИВАЕТСЯ на ω — ровно M. */
   const w = (c.omegaDeg * Math.PI) / 180;
-  const rx = ox * Math.cos(w) - oy * Math.sin(w);
-  const ry = (ox * Math.sin(w) + oy * Math.cos(w)) * TILT;
-  const rawX = sunX() + rx, rawY = sunY() + ry;
+  const cw = Math.cos(w), sw = Math.sin(w);
+  const sy = oy * TILT;
+  const rawX = sunX() + ox * cw - sy * sw;
+  const rawY = sunY() + ox * sw + sy * cw;
 
   /* Сглаживание позиции (v3.0). Экспоненциальный фильтр первого порядка:
      даже если источник движения даст неидеально равномерный прирост
@@ -571,6 +605,14 @@ function drawOrbits() {
       const w = (p.omegaDeg * Math.PI) / 180;
       ctx.save();
       ctx.translate(sunX(), sunY());
+      /* v7.6.1: КОНТУР И ТЕЛО — ОДНА МАТЕМАТИКА. Тело в keplerEllipsePos
+         считает точку как R(ω)·(x, y·TILT), т.е. это ЭКРАНИРОВАННЫЙ эллипс
+         с полуосями (a, b·TILT), повёрнутый на ω. Поэтому ctx рисует
+         rotate(ω) + ellipse(a, b·TILT) БЕЗ scale(1,TILT): раньше и scale,
+         и b·TILT одновременно давали ДВОЙНОЙ наклон (орбиты «складывались»
+         почти в линию, e.g. Юпитер/Сатурн выглядели полосками), а тело шло
+         по одинарному — отсюда жалоба «объекты движутся НЕ по нарисованным
+         эллипсам». Численная проверка: расстояние тело→контур < 0.01 px. */
       ctx.rotate(w);
       // центр эллипса смещён от фокуса (Солнца) на −a·e по оси перигелия
       ctx.beginPath();
@@ -692,11 +734,13 @@ function drawCometOrbits() {
     const w = (c.omegaDeg * Math.PI) / 180;
     ctx.save();
     ctx.translate(sunX(), sunY());
+    /* v7.6.1: без scale(1,TILT): эллипс рисуется с уже наклонённой
+       полуосью b·TILT — ровно так же, как cometPosition трансформирует
+       точку (см. комментарий в drawOrbits). */
     ctx.rotate(w);
-    ctx.scale(1, TILT);
     ctx.beginPath();
     // настоящий эллипс: центр смещён от фокуса (Солнца) на c = a·e
-    ctx.ellipse(-aPx * eVis, 0, aPx, bPx, 0, 0, Math.PI * 2);
+    ctx.ellipse(-aPx * eVis, 0, aPx, bPx * TILT, 0, 0, Math.PI * 2);
     ctx.stroke();
     ctx.restore();
   }
@@ -1020,23 +1064,21 @@ function circleScreenPoint(fx, fy, rPx, ang, tiltY) {
 
 /* Позиция крупнейшего астероида: в режиме "ellipse" — эллипс Кеплера
    с Солнцем в фокусе; в режиме "circle" — упрощённый круг.
-   Возвращает { x, y, rAU } — rAU нужно для корректного перекрытия Солнцем. */
+   Возвращает { x, y, rAU } — rAU нужно для корректного перекрытия Солнцем.
+   v7.6: через scaleAUtoPx (та же шкала, что у контура орбиты в drawBelt) и
+   общую матрицу keplerEllipsePos — траектория лежит на нарисованном эллипсе. */
 function asteroidEllipsePos(a, cx, cy) {
   if (state.orbitMode === "circle") {
     const pt = circleScreenPoint(cx, cy, beltAUtoPx(a.mainAU),
       circleAngle(state.simDays, a.periodDays, (a.M0 * Math.PI) / 180), TILT);
     return { x: pt.x, y: pt.y, rAU: a.mainAU };
   }
-  const aPx = beltAUtoPx(a.mainAU);
-  const bPx = aPx * Math.sqrt(1 - a.ecc * a.ecc);
-  const Mraw = circleAngle(state.simDays, a.periodDays, (a.M0 * Math.PI) / 180);
-  const Ecc = keplerSolve(normalizeAngle(Mraw), a.ecc);   // нормализация без потери знака
-  const rAU = a.mainAU * (1 - a.ecc * Math.cos(Ecc));   // истинное расстояние до Солнца
-  const ox = Math.cos(Ecc) * aPx - aPx * a.ecc;
-  const oy = Math.sin(Ecc) * bPx;
-  const w = (a.omegaDeg * Math.PI) / 180;   // долгота перигелия из данных
-  return { x: cx + ox * Math.cos(w) - oy * Math.sin(w),
-           y: cy + (ox * Math.sin(w) + oy * Math.cos(w)) * TILT, rAU };
+  /* Адаптер элементов: у астероидов большая полуось хранится в mainAU,
+     фаза — в M0 (градусы). keplerEllipsePos читает orbitAU/phase0. */
+  const E = a._el || (a._el = {});
+  E.orbitAU = a.mainAU; E.ecc = a.ecc; E.periodDays = a.periodDays;
+  E.phase0 = (a.M0 * Math.PI) / 180; E.omegaDeg = a.omegaDeg;
+  return keplerEllipsePos(E, cx, cy);
 }
 
 /* layer === "back" — камни и астероиды ЗА Солнцем (ВЕРХНЯЯ половина вида):
@@ -1086,6 +1128,7 @@ function drawBelt(timeSec, layer) {
       } else {
         const bPx = rPx * Math.sqrt(1 - a.ecc * a.ecc);
         ctx.translate(cx, cy);
+        /* v7.6.1: единая формула с asteroidEllipsePos (без двойного наклона) */
         ctx.rotate(((a.omegaDeg) * Math.PI) / 180);
         ctx.ellipse(-rPx * a.ecc, 0, rPx, bPx * TILT, 0, 0, Math.PI * 2);
       }
@@ -1205,19 +1248,11 @@ const DWARF_PLANETS = [
   },
 ];
 
-/* Эллиптическая позиция тела по элементам (общий код планет/астероидов/койперов) */
+/* Эллиптическая позиция тела по элементам (общий код планет/астероидов/койперов).
+   v7.6: делегирует в keplerEllipsePos — ту же аффинную матрицу, которой
+   рисуется контур орбиты, поэтому траектория точно лежит на эллипсе. */
 function ellipsePosByElements(o, cx, cy) {
-  const aPx = scaleAUtoPx(o.orbitAU);
-  const bPx = aPx * Math.sqrt(1 - o.ecc * o.ecc);
-  const Mraw = circleAngle(state.simDays, o.periodDays, o.phase0);
-  const Ecc = keplerSolve(normalizeAngle(Mraw), o.ecc);
-  const rAU = o.orbitAU * (1 - o.ecc * Math.cos(Ecc));
-  const ox = Math.cos(Ecc) * aPx - aPx * o.ecc;
-  const oy = Math.sin(Ecc) * bPx;
-  const w = (o.omegaDeg * Math.PI) / 180;
-  const rx = ox * Math.cos(w) - oy * Math.sin(w);
-  const ry = (ox * Math.sin(w) + oy * Math.cos(w)) * TILT;
-  return { x: cx + rx, y: cy + ry, rAU };
+  return keplerEllipsePos(o, cx, cy);
 }
 
 function dwarfPosition(d) {
@@ -1248,6 +1283,7 @@ function drawDwarfOrbits() {
       const w = (d.omegaDeg * Math.PI) / 180;
       ctx.save();
       ctx.translate(sunX(), sunY());
+      /* v7.6.1: единая формула с keplerEllipsePos (без двойного наклона) */
       ctx.rotate(w);
       ctx.beginPath();
       ctx.ellipse(-aPx * d.ecc, 0, aPx, bPx * TILT, 0, 0, Math.PI * 2);
@@ -1695,17 +1731,37 @@ function frame(now) {
 
   const timeSec = getTimeSec();
   maybeSpawnAlien(dt, timeSec);          // случайные визиты инопланетян
-  drawBackground(timeSec);               // звёздный фон — вне масштаба (бесконечно далёк)
-  /* Трансформация масштаба вида: всё «мировое» содержимое рисуется с
-     scale(zoom) вокруг центра экрана. Клик/наведение пересчитываются
-     обратно через toWorld(). */
+
+  /* v7.6 (переписано): ЭКСПЕРИМЕНТ С OFFSCREEN-БУФЕРОМ ОТМЕНЁН — именно он
+     и ломал картину. Контур орбиты кэшировался в буфере, а звёздный фон
+     перерисовывался каждый кадр ПОВЕРХ него без полной очистки канваса:
+     при мерцании звёзд под линиями оставались полупрозрачные «призраки»
+     прежних раскладок — пользователь видел эллипсы Кеплера из прошлой
+     схемы, а планеты шли по актуальной. Отсюда жалоба: «эллипсы нарисованы
+     правильно, но объекты движутся по другим траекториям».
+     Теперь каждый кадр рисуется ЗАНОВО И ЦЕЛИКОМ в честном порядке:
+       1) фон (звёзды, туманность);
+       2) орбиты планет / карликов / комет;
+       3) тела поверх своих контуров.
+     Орбиты и тела проходят ЧЕРЕЗ ОДНУ ТУ ЖЕ трансформацию зума внутри
+     одного ctx.save()/restore(): контур и траектория совпадают пиксель в
+     пиксель при любом зуме/панораме. Любое изменение схемы (режим O/C,
+     слои D/B/L, зум, панорама, resize) мгновенно стирает прежние контуры. */
+  drawBackground(timeSec);               // чистый фон кадра (заливка + звёзды)
+
+  /* Трансформация масштаба вида: ВСЁ «мировое» содержимое (и орбиты, и тела)
+     рисуется с scale(zoom) вокруг центра экрана. Клик/наведение
+     пересчитываются обратно через toWorld(). */
   ctx.save();
   ctx.translate(sunX(), sunY());
   ctx.scale(state.zoom, state.zoom);
   ctx.translate(-sunX(), -sunY());
-  drawOrbits();                          // орбиты планет: эллипсы Кеплера или упрощённые круги
-  drawDwarfOrbits();                     // v7.5: пунктирные орбиты карликовых планет (пояс Койпера)
-  drawCometOrbits();                     // эллиптические орбиты комет (пунктир)
+
+  /* Слой орбит — строго под всеми телами */
+  drawOrbits();                          // эллипсы Кеплера / круги планет
+  drawDwarfOrbits();                     // пунктирные орбиты карликовых планет
+  drawCometOrbits();                     // пунктирные орбиты комет
+
   /* Дальний слой: тела «за» Солнцем — их перекроет диск Солнца */
   drawBelt(timeSec, "back");             // дальняя половина пояса астероидов
   for (const p of PLANETS) drawPlanet(p, timeSec, "back");
