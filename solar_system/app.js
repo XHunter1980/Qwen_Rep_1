@@ -8,7 +8,7 @@
 
 /* Версия сборки — ТОЛЬКО номер, без описаний (по требованию).
    Видна в заголовке вкладки, в шапке страницы и в консоли. */
-const VERSION = "v7.1";
+const VERSION = "v7.2";
 document.title = `Солнечная система ${VERSION}`;
 console.log(`%c☀️ Солнечная система — сборка: ${VERSION}`, "color:#ffd75e;font-weight:bold");
 /* Версия сборки: бейдж в заголовке панели управления + сноска внизу по центру */
@@ -259,6 +259,9 @@ const MOON_MIN_PX = 1.2;             // нижняя граница различ
    Проверка монотонности (px): Деймос 1.4 < Фобос 1.7 < Япет 1.4×… см.
    таблицу ниже; Ганимед остаётся крупнейшей луной (5.3 px). */
 const MOON_SIZE_BOOST = {
+  /* Визуальные «песчинки» Меркурия/Венеры (v7.2): distKm=0 → диаметр по
+     линейной шкале был бы 0, floor дал бы одинаковые точки без различия. */
+  "Меркурий-I": 1.0, "Меркурий-II": 1.0, "Венера-I": 1.0,
   "Луна": 1.2,       // 3 475 км → 3.5 px (чуть больше Европы: реально 3 475 > 3 122)
   "Европа": 1.05,    // 3 122 км → 2.7 px
   "Ио": 1.15,        // 3 643 км → 3.5 px
@@ -446,7 +449,16 @@ function cometPosition(c) {
     c._sm = { x: rawX, y: rawY };
     c._smW = W; c._smH = H;
   } else {
-    const k = 0.45;                       // доля «догоняемого» пути за кадр
+    /* v7.2: фильтр догоняет цель по ВРЕМЕНИ (k = min(1, dt·10)), а не по
+       фиксированной доле пути за кадр. Раньше при перемещении карты мышью
+       sunX()/sunY() меняются на десятки px между кадрами — «цель» прыгала,
+       а постоянный k=0.45 растягивал догон на несколько кадров: комета
+       скользила вдоль траектории в разы быстрее своих орбитальных скоростей
+       («быстро перемещаются при панорамировании»). При обычном dt≈16ms
+       k≈0.16 — плавное сглаживание; при резком сдвиге камеры тело
+       телепортируется вместе со всей системой (за один кадр), как и планеты. */
+    const dtSec = Math.min(0.05, (performance.now() - lastT) / 1000);
+    const k = Math.min(1, dtSec * 10);
     c._sm.x += (rawX - c._sm.x) * k;
     c._sm.y += (rawY - c._sm.y) * k;
   }
@@ -470,6 +482,10 @@ function resize() {
   canvas.style.width = W + "px";
   canvas.style.height = H + "px";
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  /* v7.2: при изменении размера окна пересчитываем позиции сглаженных
+     объектов (кометы), чтобы фильтр не «догонял» старую точку несколько
+     кадров — иначе комета проскакивает по траектории сверх своей скорости. */
+  for (const c of COMETS) { c._sm = null; }
 }
 window.addEventListener("resize", resize);
 resize();
@@ -603,9 +619,26 @@ function cometAPx(c) {
    составлял бы всего 1–3% от длины — «иголка», по которой комета носится
    сквозь Солнце. Поэтому модельные орбиты сохраняют РЕАЛЬНЫЙ перигелий
    q = a·(1−e), но имеют разумный эксцентриситет и вписываются в экран. */
-const COMET_VIS_A = { hb: 24, nw: 28 };
+/* Видимые большие полуоси (px-единицы шкалы). Разнесены заметно (v7.2):
+   раньше орбиты HB и NW шли почти параллельными полосами и визуально
+   сливались в «две из четырёх». */
+const COMET_VIS_A = { g: 15, e: 19, hb: 26, nw: 33 };
 
 const COMETS = [
+  {
+    name: "Комета Галлея", nameEn: "1P/Halley",
+    aAU: 17.8, ecc: 0.967, periodYr: 75.3, perihelionAU: 0.59, aphelionAU: 35.1,
+    visA: COMET_VIS_A.g, visEcc: 0.87, omegaDeg: 112, phase: 2.1, slowFor: 40,
+    color: "#cfeaff", type: "Короткопериодическая комета (семья Юпитера)",
+    desc: "Самая знаменитая комета: возвращается к Земле каждые ~76 лет (последний раз — 1986 г., следующий — 2061 г.). Ядро ~11 км, наблюдается человечеством более 2000 лет.",
+  },
+  {
+    name: "Комета Энке", nameEn: "2P/Encke",
+    aAU: 2.22, ecc: 0.848, periodYr: 3.3, perihelionAU: 0.34, aphelionAU: 4.1,
+    visA: COMET_VIS_A.e, visEcc: 0.72, omegaDeg: 186, phase: 4.4, slowFor: 14,
+    color: "#ffe9c4", type: "Короткопериодическая комета",
+    desc: "Комета с самым коротким известным периодом — всего 3.3 года. Считается источником метеорного потока Тауриды; ядро ~4.8 км.",
+  },
   {
     name: "Комета Хейла-Боппа", nameEn: "C/1995 O1 Hale-Bopp",
     aAU: 173, ecc: 0.995, periodYr: 7470, perihelionAU: 0.87, aphelionAU: 345,
@@ -787,7 +820,10 @@ const PLANETS = [
     desc: "Ближайшая к Солнцу и самая маленькая планета. Дневная сторона раскаляется до +430 °C, ночная остывает до −180 °C.",
     // Крупнейшие луны (опциональный слой): periodDays — сидерический период,
     // distKm — большая полуось орбиты, relR — радиус относительно Земли, drawOrbR — орбита на экране (px)
-    majorMoons: [],
+    majorMoons: [
+      { name: "Меркурий-I", nameEn: "Mercury Visual A", periodDays: 3.1, distKm: 0, relR: 0.0006, drawOrbR: 11, color: "#9c9c9c", incl: 8 },
+      { name: "Меркурий-II", nameEn: "Mercury Visual B", periodDays: 5.4, distKm: 0, relR: 0.0005, drawOrbR: 16, color: "#8d8d8d", incl: 14 },
+    ],
   },
   {
     name: "Венера", nameEn: "Venus",
@@ -797,7 +833,9 @@ const PLANETS = [
     color: "#e6c47a", shades: ["#f5e0ac", "#dfb877", "#a97f49"],
     moons: 0, type: "Каменистая планета",
     desc: "Самая горячая планета (≈ +465 °C) из-за плотной углекислотной атмосферы и парникового эффекта. Вращается в обратную сторону.",
-    majorMoons: [],
+    majorMoons: [
+      { name: "Венера-I", nameEn: "Venus Visual A", periodDays: 4.2, distKm: 0, relR: 0.0007, drawOrbR: 13, color: "#c9b48a", incl: 10 },
+    ],
   },
   {
     name: "Земля", nameEn: "Earth",
@@ -1191,7 +1229,7 @@ function drawMoon(planet, moon, pos, R, highlight) {
   ctx.fill();
 
   // имя — при выборе/наведении на планету или включённых подписях при увеличенном масштабе
-  if (highlight || (state.showLabels && planetScreenRadius(planet) >= planet.drawR && R > 12)) {
+  if (highlight || state.showLabels) {
     ctx.fillStyle = "rgba(200, 210, 235, 0.75)";
     ctx.font = "10px 'Segoe UI', sans-serif";
     ctx.textAlign = "center";
@@ -2384,7 +2422,13 @@ btnCollapse.className = "panel-collapse floating";
    убирает inline-right, чтобы CSS всегда выигрывал. */
 function positionFloatingBtn() {
   if (!btnCollapse) return;
-  btnCollapse.style.right = "";   /* значение из CSS: right:14px */
+  /* v7.2: стрелка привязана к ВЕРХНЕЙ ГРАНИ панели управления и лежит на
+     64px выше неё (не в ней и не на контролах). top задаётся из JS по
+     фактическому offsetTop drawer'а — значение переживает изменение
+     layout (например, мобильное смещение панели). */
+  const panelTop = controlsEl ? controlsEl.getBoundingClientRect().top : 74;
+  btnCollapse.style.right = "14px";
+  btnCollapse.style.top = Math.round(panelTop - 64) + "px";
 }
 window.addEventListener("resize", positionFloatingBtn);
 
@@ -2399,19 +2443,22 @@ function setPanelCollapsed(collapsed) {
   positionFloatingBtn();
 }
 
-/* v6.0: кнопка «Скрыть панель» внизу drawer'а — альтернативный способ
-   схлопнуть панель, если стрелка над ней оказалась незаметна */
+/* v7.2: кнопка «Скрыть панель» переделана в стиль обычных кнопок панели
+   (ctrl-btn secondary) и перенесена из низа drawer'а в верхнюю часть —
+   сразу после секции управления, чтобы не теряться при прокрутке. */
 const hideBtn = document.createElement("button");
 hideBtn.id = "btnHidePanel";
-hideBtn.className = "hide-panel-btn";
+hideBtn.className = "ctrl-btn secondary hide-panel-btn";
 hideBtn.textContent = "✕ Скрыть панель";
 hideBtn.title = "Свернуть панель управления (H)";
 const cBody = document.getElementById("controlsBody");
-if (cBody) {
+if (cBody && cBody.firstElementChild) {
   const wrap = document.createElement("div");
   wrap.className = "hide-panel-wrap";
   wrap.appendChild(hideBtn);
-  cBody.appendChild(wrap);
+  cBody.insertBefore(wrap, cBody.firstElementChild);
+} else if (cBody) {
+  cBody.appendChild(hideBtn);
 }
 hideBtn.addEventListener("click", () => setPanelCollapsed(true));
 
@@ -2423,6 +2470,31 @@ btnCollapse.addEventListener("click", () => {
    Панель открывается только явно: стрелка ▼ над панелью или клавиша H. */
 
 setPanelCollapsed(false);
+
+/* ---------- v7.2: раскрытие панели при подведении мыши к правому краю ----------
+   Пользователь просил вернуть hover-открытие — но ТОЛЬКО открытие, без
+   автоскрытия (панель не «съезжает» сама). Работает лишь когда панель
+   свёрнута: курсор входит в невидимую зону 26px у правого края экрана →
+   панель раскрывается; задержка 120ms отсекает случайные проходы мыши. */
+const HOVER_EDGE_PX = 26;
+const HOVER_OPEN_DELAY_MS = 120;
+let hoverOpenTimer = null;
+window.addEventListener("mousemove", (e) => {
+  if (!state.panelCollapsed) return;              // открытая панель не трогаем
+  /* v7.2: не раскрывать, пока курсор занято чем-то другим — стрелкой или
+     контролами панели (у кнопки «Скрыть панель» свой обработчик клика). */
+  const t = e.target;
+  if (t && t.closest && t.closest("#btnCollapsePanel, .controls")) return;
+  if (e.clientX < window.innerWidth - HOVER_EDGE_PX) {
+    if (hoverOpenTimer) { clearTimeout(hoverOpenTimer); hoverOpenTimer = null; }
+    return;
+  }
+  if (hoverOpenTimer) return;                     // уже ожидаем раскрытие
+  hoverOpenTimer = setTimeout(() => {
+    hoverOpenTimer = null;
+    if (state.panelCollapsed) setPanelCollapsed(false);
+  }, HOVER_OPEN_DELAY_MS);
+});
 
 /* v4.8: стартовое состояние кнопки музыки (выключена — включается кликом/P) */
 {

@@ -98,7 +98,7 @@ html, body {
 .panel-collapse.floating {
   position: fixed;
   left: auto;
-  top: -52px;                /* v7.1: над верхней гранью панели (.controls top:74px) */
+  top: -64px;                /* v7.2: выше — над панелью с запасом по вертикали */
   right: 14px;               /* по горизонтали — над шапкой drawer'а */
   z-index: 30;
   opacity: 1 !important;
