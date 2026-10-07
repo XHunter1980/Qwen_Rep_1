@@ -26,6 +26,17 @@ html, body {
   pointer-events: none;
   z-index: 5;
 }
+/* v7.0: левая колонка — инфо-карточка в flow СРАЗУ ПОД картой Млечного Пути
+   (topbar'ом). Блок прижат к тому же левому краю, ширина совпадает с картой,
+   поэтому карточка визуально «продолжает» карту и гарантированно не накладывается
+   на правую панель управления. */
+.topbar-left {
+  position: fixed;
+  top: 340px; left: 20px;
+  width: 280px;
+  z-index: 12;
+  pointer-events: none;    /* клики проходят сквозь пустые области блока */
+}
 .topbar h1 {
   font-size: 22px;
   font-weight: 600;
@@ -87,10 +98,15 @@ html, body {
    drawer'а, поэтому не прячется вместе с ней: при свёрнутой панели на том
    же месте остаётся ▼ для раскрытия. Просьба пользователя: «стрелочку ещё
    чуть выше» + «верни как было, а то она скрывается вместе с панелью». */
+/* v7.0: клавиша ▲/▼ — плавающая кнопка в ВЕРХНЕМ ПРАВОМ УГЛУ экрана (fixed,
+   right:14px, top:14px). Она НЕ внутри drawer'а и не накладывается на панель:
+   при свёрнутой панели остаётся на том же месте и раскрывает её (▼), при
+   открытой — сворачивает (▲). Видна всегда. */
 .panel-collapse.floating {
   position: fixed;
   left: auto;
-  top: 28px;                 /* над панелью (.controls top:74px) */
+  top: 14px;
+  right: 14px;               /* верхний правый угол экрана */
   z-index: 30;
   opacity: 1 !important;
   pointer-events: auto;
@@ -261,8 +277,8 @@ html, body {
   position: relative;
   left: auto;
   margin-top: 10px;
-  width: 230px;
-  height: 230px;
+  width: 280px;
+  height: 280px;
   border: 1px solid rgba(120, 150, 220, 0.35);
   border-radius: 12px;
   overflow: hidden;
@@ -330,34 +346,30 @@ input[type="range"] {
 .toggle-block label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
 .toggle-block input { accent-color: #6a8dff; cursor: pointer; }
 
-/* ---------- Информационная карточка ---------- */
-/* v4.7: fixed — карточка привязана к экрану и НЕ зависит от состояния
-   панели управления (раньше наследовала её перекрытие/скрытие).
-   Левый нижний угол — противоположный угол от панели (справа). */
+/* v7.0: карточка живёт в flow блока .topbar-left (под картой галактики) —
+   больше НЕ fixed и НЕ в правом нижнем углу; она физически отделена от
+   панели управления и не может с ней коррелировать. */
 .info-panel {
-  /* v4.9: карточка перенесена в ПРАВЫЙ нижний угол — она больше нигде не
-     пересекается с панелью управления (drawer справа сверху) и её клавишей;
-     z-index ниже панели на любой случай. */
-  position: fixed;
-  bottom: 18px; right: 18px;
-  top: auto; left: auto;
-  width: 300px;
-  padding: 20px 20px 16px;
+  position: relative;
+  top: auto; left: auto; right: auto; bottom: auto;
+  width: 100%;
+  margin-top: 12px;
+  padding: 16px 16px 12px;
   background: rgba(13, 17, 33, 0.9);
   border: 1px solid rgba(120, 150, 220, 0.3);
   border-radius: 16px;
   backdrop-filter: blur(10px);
   box-shadow: 0 10px 40px rgba(0,0,0,.6);
   z-index: 12;            /* панель (15/25) всегда поверх карточки */
+  pointer-events: auto;   /* внутри колонки-«песочницы» карточка кликабельна */
   transition: opacity .25s, transform .25s;
 }
 .info-panel.hidden {
-  opacity: 0;
-  transform: translateY(30px);
-  pointer-events: none;
+  display: none;          /* скрытая карточка не занимает место под картой */
 }
-@media (max-width: 760px) {   /* узкий экран: карточка шире, но всё так же справа снизу */
-  .info-panel { width: min(86vw, 300px); bottom: 12px; right: 12px; }
+@media (max-width: 760px) {   /* узкий экран: колонка остаётся слева сверху */
+  .topbar-left { width: min(86vw, 280px); }
+  .info-panel { width: 100%; }
 }
 
 .close-btn {

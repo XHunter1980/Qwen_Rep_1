@@ -16,13 +16,15 @@
     <header class="topbar">
       <h1>☀️ Солнечная система</h1>
       <div class="minimap-wrap" title="Где наша система находится в Галактике">
-        <canvas id="minimap" width="230" height="230"></canvas>
+        <canvas id="minimap" width="280" height="280"></canvas>
       </div>
     </header>
 
-    <!-- v6.0: информационная карточка объектов — СРАЗУ ПОД картой Млечного
-         Пути (в flow topbar'а, а не fixed-накладка). Она физически отделена
-         от панели управления и никогда с ней не пересекается. -->
+    <!-- v7.0: информационная карточка объектов — ВНУТРИ блока левой колонки,
+         сразу ПОД картой Млечного Пути (в flow, а не fixed-накладка).
+         Левая колонка (topbar-left) физически отделена от панели управления
+         (drawer справа) и никогда с ней не пересекается. -->
+    <div class="topbar-left">
     <aside id="infoPanel" class="info-panel hidden" aria-live="polite">
       <button id="btnCloseInfo" class="close-btn" title="Закрыть">✕</button>
       <div class="info-planet-icon" id="infoIcon"></div>
@@ -36,6 +38,7 @@
       </ul>
       <p class="info-desc" id="infoDesc"></p>
     </aside>
+    </div><!-- /.topbar-left -->
 
     <!-- Панель управления: боковой drawer справа; сворачивается клавишей ◀ или H -->
     <div class="controls" role="group" aria-label="Управление симуляцией">

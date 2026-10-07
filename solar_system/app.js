@@ -8,7 +8,7 @@
 
 /* Версия сборки — ТОЛЬКО номер, без описаний (по требованию).
    Видна в заголовке вкладки, в шапке страницы и в консоли. */
-const VERSION = "v6.0";
+const VERSION = "v7.0";
 document.title = `Солнечная система ${VERSION}`;
 console.log(`%c☀️ Солнечная система — сборка: ${VERSION}`, "color:#ffd75e;font-weight:bold");
 /* Версия сборки: бейдж в заголовке панели управления + сноска внизу по центру */
@@ -1494,7 +1494,7 @@ function frame(now) {
    • балдж (эллиптическое утолщение) с шапкой старых красных звёзд;
    • гало из далёких шаровых скоплений;
    • подпись рукава Ориона и указатель на Солнечную систему. */
-const MM_S = 230;                              // логический размер миникарты, px
+const MM_S = 280;                              // логический размер миникарты, px (v7.0: крупнее)
 const minimapCanvas = document.getElementById("minimap");
 const mctx = minimapCanvas ? minimapCanvas.getContext("2d") : null;
 let mmBase = null;                             // собранный кадр галактики
@@ -1517,25 +1517,38 @@ function buildMinimap() {
   const rnd = mmRnd(20261006);
   const cx = MM_S / 2, cy = MM_S / 2;
 
-  // фон глубокого космоса
-  b.fillStyle = "rgba(4, 6, 14, 0.96)";
+  /* ===== v7.0: детализированная «красивая» галактика =====
+   1) глубокий фон с мягким виньеточным затемнением к углам;
+   2) светящийся диск (disk glow) + балдж;
+   3) 4 спиральных рукава с газовой подложкой, звёздной пылью,
+      HII-областями и тёмными пылевыми полосами;
+   4) плотные поля фоновых звёзд (гало + диск) с яркими «двойными»;
+   5) тонкая штриховая рамка-скаффолд по краю карты. */
+
+  // фон глубокого космоса + виньетка
+  b.fillStyle = "rgba(4, 6, 14, 0.97)";
+  b.fillRect(0, 0, MM_S, MM_S);
+  const vg = b.createRadialGradient(cx, cy, MM_S * 0.25, cx, cy, MM_S * 0.72);
+  vg.addColorStop(0, "rgba(0,0,0,0)");
+  vg.addColorStop(1, "rgba(0,0,0,0.55)");
+  b.fillStyle = vg;
   b.fillRect(0, 0, MM_S, MM_S);
 
   // масштаб галактики относительно размера карточки (150 px -> K=1)
   const K = MM_S / 150;
 
-  // далёкие фоновые звёзды (гало + случайные)
-  for (let i = 0; i < 200; i++) {
-    const x = rnd() * MM_S, y = rnd() * MM_S;
-    b.globalAlpha = 0.15 + rnd() * 0.5;
-    b.fillStyle = rnd() > 0.8 ? "#ffd9b0" : "#cfd9ff";
-    b.beginPath(); b.arc(x, y, (0.25 + rnd() * 0.7) * K, 0, Math.PI * 2); b.fill();
-  }
-  b.globalAlpha = 1;
-
+  // общий ореол дисков галактики (мягкое голубоватое свечение) — рисуется
+  // уже внутри translate(cx,cy), поэтому координаты центрированы на 0,0
   b.save();
   b.translate(cx, cy);
   const FLAT = 0.78;                           // наклон диска (почти «с ребра»)
+
+  const halo = b.createRadialGradient(0, 0, 0, 0, 0, 78 * K);
+  halo.addColorStop(0, "rgba(150,170,230,0.16)");
+  halo.addColorStop(0.55, "rgba(120,140,210,0.07)");
+  halo.addColorStop(1, "rgba(0,0,0,0)");
+  b.fillStyle = halo;
+  b.beginPath(); b.ellipse(0, 0, 78 * K, 78 * FLAT * K, 0, 0, Math.PI * 2); b.fill();
 
   function spiralPt(t, phase, wind) {          // логарифмическая спираль
     const ang = phase + t * wind;
@@ -1545,14 +1558,26 @@ function buildMinimap() {
 
   // 4 основных рукава + ориентировочный рукав Ориона (между 2/3 и центром)
   const ARMS = [
-    { phase: 0.0,  color: [150, 175, 255], grains: 1700 },
-    { phase: Math.PI,       color: [150, 175, 255], grains: 1700 },
-    { phase: Math.PI / 2,   color: [255, 205, 150], grains: 1500 },
-    { phase: -Math.PI / 2,  color: [255, 205, 150], grains: 1500 },
-    { phase: 2.35, color: [210, 230, 255], grains: 800, orion: true },
+    { phase: 0.0,  color: [150, 175, 255], grains: 2600 },
+    { phase: Math.PI,       color: [150, 175, 255], grains: 2600 },
+    { phase: Math.PI / 2,   color: [255, 205, 150], grains: 2300 },
+    { phase: -Math.PI / 2,  color: [255, 205, 150], grains: 2300 },
+    { phase: 2.35, color: [210, 230, 255], grains: 1100, orion: true },
   ];
   for (const arm of ARMS) {
     const wind = 5.2;
+    // газовая подложка рукава — широкие мягкие мазки вдоль спирали
+    b.lineCap = "round";
+    for (let i = 0; i < 60; i++) {
+      const t = 0.05 + rnd() * 0.95;
+      const [x, y] = spiralPt(t, arm.phase, wind);
+      const rr = (6 - t * 3) * K;
+      const g = b.createRadialGradient(x, y, 0, x, y, rr);
+      g.addColorStop(0, `rgba(${arm.color[0]},${arm.color[1]},${arm.color[2]},0.05)`);
+      g.addColorStop(1, "rgba(0,0,0,0)");
+      b.fillStyle = g;
+      b.beginPath(); b.arc(x, y, rr, 0, Math.PI * 2); b.fill();
+    }
     for (let i = 0; i < arm.grains; i++) {
       const t = Math.pow(rnd(), 0.65);         // плотнее к центру
       const spread = (rnd() - 0.5) * (0.16 + 0.1 * t); // разброс звёздной «пыли»
@@ -1575,14 +1600,14 @@ function buildMinimap() {
       b.beginPath(); b.arc(x, y, rr, 0, Math.PI * 2); b.fill();
     }
     // HII-области звездообразования (розовинка) и молодые скопления (голубое)
-    for (let i = 0; i < 24; i++) {
+    for (let i = 0; i < 34; i++) {
       const t = 0.18 + rnd() * 0.78;
       const [x, y] = spiralPt(t, arm.phase, wind);
       b.fillStyle = rnd() > 0.5 ? "rgba(255,120,160,0.22)" : "rgba(160,200,255,0.3)";
       b.beginPath(); b.arc(x + (rnd()-0.5)*2*K, y + (rnd()-0.5)*2*K, (0.5 + rnd() * 0.9) * K, 0, Math.PI * 2); b.fill();
     }
     // тёмные пылевые полосы вдоль внутренних витков
-    for (let i = 0; i < 16; i++) {
+    for (let i = 0; i < 22; i++) {
       const t = 0.12 + rnd() * 0.4;
       const [x, y] = spiralPt(t, arm.phase + 0.08, wind);
       b.fillStyle = "rgba(5,4,10,0.5)";
@@ -1615,8 +1640,39 @@ function buildMinimap() {
     b.fillStyle = "rgba(240,240,255,0.5)";
     b.beginPath(); b.arc(x, y, 0.4 * K, 0, Math.PI * 2); b.fill();
   }
-  b.restore();
+
+  /* ===== фоновые звёзды рисуются ПОСЛЕ translate и в центрированных
+     координатах (иначе упирались бы в левый верхний угол карты) ===== */
+  b.restore();                                 // выходим из центрированной системы
+  // далёкие фоновые звёзды (гало + случайные) — плотнее и разнообразнее
+  for (let i = 0; i < 420; i++) {
+    const x = rnd() * MM_S, y = rnd() * MM_S;
+    b.globalAlpha = 0.12 + rnd() * 0.55;
+    const warm = rnd() > 0.78;
+    b.fillStyle = warm ? "#ffd9b0" : (rnd() > 0.5 ? "#cfd9ff" : "#ffffff");
+    b.beginPath(); b.arc(x, y, (0.2 + rnd() * 0.75) * K, 0, Math.PI * 2); b.fill();
+  }
+  // яркие звёзды с крестиком-бликом (дифракция)
+  for (let i = 0; i < 14; i++) {
+    const x = rnd() * MM_S, y = rnd() * MM_S, r = (0.9 + rnd() * 0.8) * K;
+    b.globalAlpha = 0.9;
+    b.fillStyle = "#eaf0ff";
+    b.beginPath(); b.arc(x, y, r * 0.5, 0, Math.PI * 2); b.fill();
+    b.strokeStyle = "rgba(220,230,255,0.35)";
+    b.lineWidth = 0.5 * K;
+    b.beginPath();
+    b.moveTo(x - r * 2.4, y); b.lineTo(x + r * 2.4, y);
+    b.moveTo(x, y - r * 2.4); b.lineTo(x, y + r * 2.4);
+    b.stroke();
+  }
   b.globalAlpha = 1;
+
+  // тонкая штриховая рамка-скаффолд по краю карты (детализация «как у обсерваторий»)
+  b.strokeStyle = "rgba(120,150,220,0.18)";
+  b.lineWidth = 1;
+  b.setLineDash([3, 5]);
+  b.strokeRect(4, 4, MM_S - 8, MM_S - 8);
+  b.setLineDash([]);
 }
 
 function drawMinimap() {
@@ -1643,7 +1699,9 @@ function drawMinimap() {
   mctx.fillStyle = "rgba(255,225,150,0.95)";
   mctx.font = `600 ${Math.round(8 * K)}px 'Segoe UI', sans-serif`;
   mctx.textAlign = "left";
-  mctx.fillText("☉ Солнечная система", sx + 6 * K, sy + 22 * K);
+  /* v7.0: подпись сокращена до «Солнце» — длинная «Солнечная система» не
+     влезала в карту и упиралась в край */
+  mctx.fillText("☉ Солнце", sx + 6 * K, sy + 22 * K);
 
   // подписи
   mctx.fillStyle = "rgba(200, 215, 250, 0.9)";
@@ -2313,13 +2371,12 @@ btnCollapse.className = "panel-collapse floating";
    клик по клавише ◀/▶, клавиша H, кнопка «Скрыть панель» внизу drawer'а.
    Никаких hover-раскрытий и таймеров, которые «съезжали» сами собой. */
 
-/* v6.0: позиционирование плавающей клавиши — по центру drawer'а (по
-   горизонтали), над его верхним краем; при свёрнутой панели остаётся там же
-   (drawer уезжает вправо, а кнопка fixed и никуда не девается). */
+/* v7.0: позиционирование плавающей клавиши — ВЕРХНИЙ ПРАВЫЙ УГОЛ экрана
+   (fixed right/top задаются CSS-ом). Функция оставлена как no-op-совместимая:
+   убирает inline-right, чтобы CSS всегда выигрывал. */
 function positionFloatingBtn() {
   if (!btnCollapse) return;
-  const w = controlsEl ? controlsEl.offsetWidth : 292;
-  btnCollapse.style.right = Math.round(14 + (w - 38) / 2) + "px";
+  btnCollapse.style.right = "";   /* значение из CSS: right:14px */
 }
 window.addEventListener("resize", positionFloatingBtn);
 
@@ -2339,7 +2396,7 @@ function setPanelCollapsed(collapsed) {
 const hideBtn = document.createElement("button");
 hideBtn.id = "btnHidePanel";
 hideBtn.className = "hide-panel-btn";
-hideBtn.textContent = "▲ Скрыть панель";
+hideBtn.textContent = "✕ Скрыть панель";
 hideBtn.title = "Свернуть панель управления (H)";
 const cBody = document.getElementById("controlsBody");
 if (cBody) {
