@@ -8,7 +8,7 @@
 
 /* Версия сборки — ТОЛЬКО номер, без описаний (по требованию).
    Видна в заголовке вкладки, в шапке страницы и в консоли. */
-const VERSION = "v7.3";
+const VERSION = "v7.4.1";
 document.title = `Солнечная система ${VERSION}`;
 console.log(`%c☀️ Солнечная система — сборка: ${VERSION}`, "color:#ffd75e;font-weight:bold");
 /* Версия сборки: бейдж в заголовке панели управления + сноска внизу по центру */
@@ -32,6 +32,23 @@ function shadeDown(hex) {
   const f = (v) => Math.round(v * 0.45);
   return `rgb(${f((n >> 16) & 255)}, ${f((n >> 8) & 255)}, ${f(n & 255)})`;
 }
+
+/* ---------- Виртуальные часы демо (v7.4) ----------
+   Раньше НЛО и фоновые эффекты (мерцание Солнца, пульсации) считали своё
+   время по НАСТЯЩЕМУ времени страницы: при паузе симуляции инопланетяне
+   продолжали лететь — «пауза не останавливала всех». Теперь у демо
+   собственные виртуальные часы: они текут только когда state.playing ===
+   true. На старте синхронизируются с реальным временем страницы (см. init
+   в конце файла), поэтому все тела оказываются в тех же стартовых фазах.
+   Объявлены ДО cometPosition(): она читает lastT для шага сглаживания —
+   раньше let lastT стоял ниже по файлу, первый кадр падал с TDZ-ошибкой
+   «Cannot access 'lastT' before initialization» (чёрный экран). */
+let lastT = performance.now();
+/* v7.4.1: dt текущего кадра — общий источник для сглаживания комет и т.п.
+   (cometPosition не имеет доступа к параметру now() функции frame). */
+let frameDt = 0;
+const demoClock = { virtual: 0 };
+function getTimeSec() { return demoClock.virtual; }
 
 const canvas = document.getElementById("space");
 const ctx = canvas.getContext("2d");
@@ -63,7 +80,7 @@ const state = {
   orbitMode: "ellipse",          // "ellipse" — эллипсы Кеплера (Солнце в фокусе)
                                  // "circle"  — упрощённые круговые орбиты
   showOrbits: true,
-  showLabels: true,
+  showLabels: false,          // v7.4: подписи названий по умолчанию ОТКЛЮЧЕНЫ (галочка в «Слои»)
   realScale: false,
   showMoons: true,
   showBelt: true,
@@ -457,8 +474,11 @@ function cometPosition(c) {
        («быстро перемещаются при панорамировании»). При обычном dt≈16ms
        k≈0.16 — плавное сглаживание; при резком сдвиге камеры тело
        телепортируется вместе со всей системой (за один кадр), как и планеты. */
-    const dtSec = Math.min(0.05, (performance.now() - lastT) / 1000);
-    const k = Math.min(1, dtSec * 10);
+    /* v7.4.1: шаг сглаживания берём из frameDt (обновляется в начале кадра).
+       В v7.4 здесь стояло «(now - lastT)» — но `now` является только параметром
+       frame(), а cometPosition() такой переменной не видит: каждый кадр летел
+       ReferenceError «now is not defined», анимация умирала. */
+    const k = Math.min(1, frameDt * 10);
     c._sm.x += (rawX - c._sm.x) * k;
     c._sm.y += (rawY - c._sm.y) * k;
   }
@@ -1310,7 +1330,7 @@ function startAlienVisit(nowSec, force = false) {
   const sweep = Math.PI * (0.9 + Math.random() * 1.4); // 0.9π..2.3π
   alienState.active = {
     ...info,
-    t0: nowSec,            // старт (сек реального времени)
+    t0: nowSec,            // старт (сек виртуального времени демо — на паузе визит замирает)
     angle, R0, rFlybyPx, speed, dir, sweep,
     entryLen: R0 - rFlybyPx, // путь по прямой до начала дуги
     exitExtra: 0,
@@ -1481,19 +1501,22 @@ function showAlienInfo(a) {
 }
 
 /* ---------- Главный цикл ---------- */
-let lastT = performance.now();
 function frame(now) {
   const dt = Math.min(0.05, (now - lastT) / 1000);
   lastT = now;
+  frameDt = dt;   // v7.4.1: dt кадра доступен функциям вне scope frame()
 
   if (state.playing) {
     // v4.5: скорость измеряется СТРОГО в разах от реальной:
     // simDays += dt(сек) × speed(×) × REAL_RATE(сутк/сек на 1×),
     // т.е. при 1× проходит ровно один земной год за 20 секунд.
     state.simDays += dt * state.speed * REAL_RATE;
+    /* v7.4: виртуальные часы идут ТОЛЬКО при воспроизведении — на паузе
+       встают и планеты, и кометы, и инопланетяне (по просьбе пользователя). */
+    demoClock.virtual += dt;
   }
 
-  const timeSec = now / 1000;
+  const timeSec = getTimeSec();
   maybeSpawnAlien(dt, timeSec);          // случайные визиты инопланетян
   drawBackground(timeSec);               // звёздный фон — вне масштаба (бесконечно далёк)
   /* Трансформация масштаба вида: всё «мировое» содержимое рисуется с
@@ -1730,11 +1753,11 @@ function drawMinimap() {
   // Солнечная система: на рукаве Ориона (~t=0.62), лёгкое «дыхание» вдоль него
   const K = MM_S / 150;
   const cx = MM_S / 2, cy = MM_S / 2, FLAT = 0.78;
-  const tSun = 0.62 + 0.012 * Math.sin(performance.now() / 1600);
+  const tSun = 0.62 + 0.012 * Math.sin(getTimeSec() / 1.6);   // v7.4: виртуальные часы (пауза = стоп)
   const ang = 2.35 + tSun * 5.2;
   const rad = (7 + tSun * 57) * K;
   const sx = cx + Math.cos(ang) * rad, sy = cy + Math.sin(ang) * rad * FLAT;
-  const pulse = (4.6 + Math.sin(performance.now() / 480) * 1.2) * K;
+  const pulse = (4.6 + Math.sin(getTimeSec() / 0.48) * 1.2) * K;
   mctx.strokeStyle = "rgba(255, 215, 106, 0.8)";
   mctx.lineWidth = 1;
   mctx.beginPath(); mctx.arc(sx, sy, pulse, 0, Math.PI * 2); mctx.stroke();
@@ -2049,6 +2072,12 @@ window.addEventListener("mouseup", () => {
 
 canvas.addEventListener("click", (e) => {
   if (dragMoved) return;                 // это был drag карты, а не клик по объекту
+  /* v7.4: клик по элементам интерфейса (панель управления, инфо-карточка,
+     плавающая стрелка) НЕ должен снимать выделение — раньше «всплывающие»
+     обработчики кликов на document перехватывали клики по контролам и
+     карточка Солнца/планеты закрывалась сразу после открытия. */
+  if (e.target && e.target.closest &&
+      e.target.closest(".controls, .info-panel, #btnCollapsePanel")) return;
   const wpt = toWorld(e.clientX, e.clientY);
   const hit = pickAny(wpt.x, wpt.y);
   if (hit && hit.alien) showAlienInfo(hit.alien);
@@ -2058,6 +2087,9 @@ canvas.addEventListener("click", (e) => {
   else if (hit) showInfo(hit.planet, hit.moon);
   else hideInfo();
 });
+
+/* v7.4: двойной клик по космосу — полноэкранный режим (вкл/выкл). */
+canvas.addEventListener("dblclick", () => toggleFullscreen());
 
 /* Колесо мыши над космосом — масштабирование вида (с зажатым Ctrl — скорость) */
 canvas.addEventListener("wheel", (e) => {
@@ -2138,6 +2170,56 @@ function updatePlayButton() {
   btnPlayPause.textContent = state.playing ? "⏸ Пауза" : "▶ Играть";
 }
 
+/* =========================================================
+   v7.4: ПОЛНОЭКРАННЫЙ РЕЖИМ (Fullscreen API)
+   Три способа включить: кнопка «⛶ Во весь экран» в панели,
+   клавиша F (или А в русской раскладке), двойной клик по космосу.
+   Выход — Esc или повторное нажатие кнопки/F. Кнопка меняет
+   подпись при смене состояния через событие fullscreenchange.
+   ========================================================= */
+let btnFs = document.getElementById("btnFullscreen");
+if (!btnFs) {
+  btnFs = document.createElement("button");
+  btnFs.id = "btnFullscreen";
+  btnFs.className = "ctrl-btn";
+  /* Вставляем сразу за кнопкой «⟲ Сброс» — в тот же ряд управления */
+  const resetBtn = document.getElementById("btnReset");
+  if (resetBtn && resetBtn.parentElement) {
+    resetBtn.insertAdjacentElement("afterend", btnFs);
+  } else {
+    const bodyEl = document.getElementById("controlsBody");
+    if (bodyEl) bodyEl.appendChild(btnFs);
+  }
+}
+function isFullscreen() {
+  return !!(document.fullscreenElement || document.webkitFullscreenElement);
+}
+function updateFsButton() {
+  btnFs.textContent = isFullscreen() ? "🗗 Выйти из экрана" : "⛶ Во весь экран";
+  btnFs.title = isFullscreen()
+    ? "Выйти из полноэкранного режима (Esc или F)"
+    : "Полноэкранный режим (F или двойной клик по космосу)";
+}
+function toggleFullscreen() {
+  try {
+    if (isFullscreen()) {
+      const exit = document.exitFullscreen || document.webkitExitFullscreen;
+      if (exit) exit.call(document);
+    } else {
+      const el = document.documentElement;
+      const req = el.requestFullscreen || el.webkitRequestFullscreen;
+      if (req) {
+        const p = req.call(el);
+        if (p && typeof p.catch === "function") p.catch(() => {}); // браузер мог отказать
+      }
+    }
+  } catch (_) { /* Fullscreen недоступен — тихо игнорируем */ }
+}
+["fullscreenchange", "webkitfullscreenchange"].forEach((ev) =>
+  document.addEventListener(ev, () => { updateFsButton(); resize(); })
+);
+updateFsButton();
+
 /* Форматирование множителя скорости: «разы от реальной» — дробные значения
    до 1× показываем с точностью до сотых, крупные — без дробей. */
 function fmtSpeed(v) {
@@ -2179,7 +2261,7 @@ btnPlayPause.addEventListener("click", () => {
 
 btnReset.addEventListener("click", () => {
   state.simDays = 0;
-  setSpeed(1);      // v4.5: стартовая скорость 1× (разы от реального времени)
+  setSpeed(0.05);   // v7.4: сброс возвращает СТАРТОВУЮ скорость 0.05× (было 1×)
   setZoom(1);       // и возврат масштаба к обзору всей системы
   state.panX = 0; state.panY = 0;   // карта — обратно в центр экрана
   state.playing = true;
@@ -2594,7 +2676,7 @@ document.getElementById("btnAlienCall").addEventListener("click", () => {
   }
   /* force=true: если предыдущий гость завис/ещё летит — он досрочно
      завершает визит, новый появляется гарантированно по нажатию. */
-  startAlienVisit(performance.now() / 1000, true);
+  startAlienVisit(getTimeSec(), true);   // v7.4: время визита — из виртуальных часов
 });
 
 /* Сноска: только номер версии сборки — без описаний и подробностей
@@ -2664,13 +2746,19 @@ window.addEventListener("keydown", (e) => {
   } else if ((e.key === "h" || e.key === "H" || e.key === "р" || e.key === "Р") &&
              !e.ctrlKey && !e.metaKey && !e.altKey) {
     setPanelCollapsed(!controlsEl.classList.contains("collapsed"));  // панель свери/развери
+  } else if ((e.key === "f" || e.key === "F" || e.key === "а" || e.key === "А") &&
+             !e.ctrlKey && !e.metaKey && !e.altKey) {
+    toggleFullscreen();   // v7.4: полноэкранный режим (двойной клик по космосу — тоже он)
   } else if (e.key === "Home") {
     state.panX = 0; state.panY = 0; setZoom(1);   // домой: центр + обзор
   }
 });
 
-setSpeed(1);      // v4.5: старт при 1× — теперь это ЧЕСТНЫЕ разы от реального
-                  // времени (земной год ≈ 20 с), прежние 0.05× из-за завышенной
-                  // базовой шкалы давали ~18 сут/с и «бег» планет
+setSpeed(0.05);   // v7.4: СТАРТОВАЯ скорость 0.05× (по просьбе пользователя;
+                  // в v4.5 старт был 1× — «честные разы от реального времени»)
 setZoom(1);
 updatePlayButton();
+/* v7.4: синхронизация виртуальных часов с реальным временем страницы при старте —
+   фазы всех периодических анимаций (в т.ч. кометы и НЛО) остаются теми же,
+   что были бы без перехода на собственные часы демо. */
+demoClock.virtual = performance.now() / 1000;
