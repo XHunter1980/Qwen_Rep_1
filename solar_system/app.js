@@ -8,7 +8,7 @@
 
 /* Версия сборки — ТОЛЬКО номер, без описаний (по требованию).
    Видна в заголовке вкладки, в шапке страницы и в консоли. */
-const VERSION = "v7.6.1";
+const VERSION = "v7.6.4";
 document.title = `Солнечная система ${VERSION}`;
 console.log(`%c☀️ Солнечная система — сборка: ${VERSION}`, "color:#ffd75e;font-weight:bold");
 /* Версия сборки: бейдж в заголовке панели управления + сноска внизу по центру */
@@ -1009,10 +1009,10 @@ const BELT_ASTEROIDS = [
     name: "Церера", nameEn: "1 Ceres",
     mainAU: 2.77, ecc: 0.079, periodDays: 1655, diameterKm: 946, M0: 120, omegaDeg: 73, drawR: 5,
     color: "#b9b3a8", type: "Карликовая планета (главный пояс)", dwarf: true,
-    moons: 1, moonNote: "Идда",
+    /* v7.6.3: «спутник» Идда убран — у Цереры подтверждённых спутников нет
+       (Идда — это кратер на самой Церере, названный в честь нимфы). */
+    moons: 0, moonNote: "",
     desc: "Крупнейший объект пояса астероидов и единственная карликовая планета внутри орбиты Нептуна. Содержит ~1/3 массы всего пояса; на поверхности — криовулканы и солёные отложения.",
-    /* Спутник Идда (d ≈ 270 км) — визуальная точка-компаньон */
-    satellites: [{ name: "Идда", periodDays: 4.57, M0: 60, color: "#cfcac2" }],
   },
   {
     name: "Веста", nameEn: "4 Vesta",
@@ -1167,15 +1167,7 @@ function drawBelt(timeSec, layer) {
       ctx.beginPath();
       ctx.arc(pos.x, pos.y, R, 0, Math.PI * 2);
       ctx.fill();
-      if (a.satellites && a.satellites.length) {   // спутник-компаньон (Идда у Цереры)
-        const ma = a.satellites[0];
-        const mang = circleAngle(state.simDays, ma.periodDays, (ma.M0 * Math.PI) / 180);
-        const mpt = circleScreenPoint(pos.x, pos.y, R + 9, mang, TILT + 0.3);
-        ctx.fillStyle = ma.color;
-        ctx.beginPath();
-        ctx.arc(mpt.x, mpt.y, Math.max(1.6, R * 0.28), 0, Math.PI * 2);
-        ctx.fill();
-      }
+      /* v7.6.3: компаньон-«луна» у Цереры убран — спутников нет в реальности */
     } else {
       ctx.beginPath();
       for (let i = 0; i <= 9; i++) {
@@ -1217,6 +1209,13 @@ const DWARF_PLANETS = [
     color: "#cbb59b", shades: ["#e6d7c3", "#c3ab90", "#7c6650"],
     type: "Карликовая планета ( plutoid, пояс Койпера)",
     moons: 5, moonNote: "Харон (двойная система), Никта, Гидра, Кербер, Стикс",
+    /* v7.6.3: визуальные спутники — реальные периоды обращения (сут).
+       distPx — отстояние точки-компаньона от диска, relR — доля радиуса тела. */
+    moonsList: [
+      { name: "Харон", periodDays: 6.387, M0: 40,  color: "#b9c2cc", distPx: 11, relR: 0.5, barrier: true },
+      { name: "Никта", periodDays: 24.9,  M0: 150, color: "#a8b0ba", distPx: 17, relR: 0.2 },
+      { name: "Гидра", periodDays: 38.2,  M0: 260, color: "#a0a8b4", distPx: 22, relR: 0.2 },
+    ],
     desc: "До 2006 г. считался девятой планетой. Орбита сильно вытянута и наклонена (17°): на участке перигелия (29.7 а.е.) Плутон бывает БЛИЖЕ к Солнцу, чем Нептун, но резонанс 3:2 не даёт им столкнуться. Плутон и Харон обращаются вокруг общего центра масс — почти двойная планета.",
   },
   {
@@ -1226,6 +1225,9 @@ const DWARF_PLANETS = [
     color: "#d7dde6", shades: ["#f0f3f8", "#ccd4df", "#828d9d"],
     type: "Карликовая планета (scattered disk)",
     moons: 1, moonNote: "Дисномия",
+    moonsList: [
+      { name: "Дисномия", periodDays: 15.775, M0: 90, color: "#c8ccd4", distPx: 12, relR: 0.35, barrier: true },
+    ],
     desc: "Самая массивная карликовая планета — именно её открытие в 2005 г. привело к пересмотрению термина «планета» и понижению Плутона. Афелий ~97 а.е.: одна из самых удалённых известных малых тел; поверхность покрыта метановым льдом.",
   },
   {
@@ -1235,6 +1237,9 @@ const DWARF_PLANETS = [
     color: "#d98f7a", shades: ["#eeb39d", "#cf8471", "#8a4a3a"],
     type: "Карликовая планета (классический пояс Койпера)",
     moons: 1, moonNote: "MK 2 (открыт 2015 г.)",
+    moonsList: [
+      { name: "MK 2", periodDays: 12.53, M0: 200, color: "#8f7a6d", distPx: 11, relR: 0.25 },
+    ],
     desc: "Третья по яркости объект пояса Койпера после Плутона и Эриды. Поверхность из метана и этана (красноватый оттенок); атмосферы нет, но в афелии метан, предположительно, конденсируется инеем.",
   },
   {
@@ -1244,6 +1249,10 @@ const DWARF_PLANETS = [
     color: "#cfd8dd", shades: ["#eef4f7", "#c4cfd6", "#7f8c94"],
     type: "Карликовая планета (вытянутое тело, семейство Гаумеа)",
     moons: 2, moonNote: "Хиака и Намака (+ кольцевая система)",
+    moonsList: [
+      { name: "Хиака", periodDays: 49.12, M0: 30,  color: "#dfe6ea", distPx: 12, relR: 0.3 },
+      { name: "Намака", periodDays: 34.63, M0: 210, color: "#cfd8de", distPx: 17, relR: 0.22 },
+    ],
     desc: "Вращается вокруг оси за рекордные ~3,9 часа — из-за этого вытянута в сигару (~1 560 × 1 000 км). Первая карликовая планета с обнаруженным кольцом и двумя ледяными спутниками; яркая поверхность — водяной лёд.",
   },
 ];
@@ -1326,6 +1335,43 @@ function drawDwarf(d, timeSec, layer) {
   ctx.beginPath();
   ctx.arc(pos.x, pos.y, R, 0, Math.PI * 2);
   ctx.fill();
+
+  /* v7.6.3: реальные спутники карликовых планет Койпера — точки-компаньоны
+     с подписями при крупном зуме. Харон у Плутона — двойная система: оба
+     тела обращаются вокруг общего барицентра (показано орбитой-пунктиром). */
+  /* v7.6.4: спутники карликовых планет привязаны к слою «Спутники» —
+     при выключенном слое они НЕ рисуются и их точки попаданий сбрасываются
+     (раньше companios висели на карте всегда, в т.ч. без названий). */
+  if (d.moonsList && state.showMoons) {
+    for (const m of d.moonsList) {
+      const ma = circleAngle(state.simDays, m.periodDays, (m.M0 * Math.PI) / 180);
+      const mr = R + m.distPx;
+      const mpt = circleScreenPoint(pos.x, pos.y, mr, ma, TILT + 0.3);
+      if (m.barrier) {   // орбита спутника вокруг системы (Харон)
+        ctx.save();
+        ctx.strokeStyle = "rgba(190, 200, 230, 0.28)";
+        ctx.setLineDash([2, 3]);
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.ellipse(pos.x, pos.y, mr, mr * (TILT + 0.3), 0, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+      ctx.fillStyle = m.color;
+      ctx.beginPath();
+      ctx.arc(mpt.x, mpt.y, Math.max(1.4, R * m.relR), 0, Math.PI * 2);
+      ctx.fill();
+      m._screen = { x: mpt.x, y: mpt.y, r: Math.max(1.4, R * m.relR), planet: d.name };
+      if (state.showLabels || state.zoom > 2) {
+        ctx.fillStyle = "rgba(175, 190, 225, 0.75)";
+        ctx.font = "10px 'Segoe UI', sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText(m.name, mpt.x, mpt.y - Math.max(1.4, R * m.relR) - 4);
+      }
+    }
+  } else if (d.moonsList) {
+    for (const m of d.moonsList) m._screen = null;
+  }
 
   /* Подпись: если названия включены — всегда; иначе — при крупном зуме (>1.2×),
      чтобы далёкие тела можно было опознать, приближая картину. */
@@ -1823,13 +1869,14 @@ function buildMinimap() {
   const rnd = mmRnd(20261006);
   const cx = MM_S / 2, cy = MM_S / 2;
 
-  /* ===== v7.0: детализированная «красивая» галактика =====
+  /* ===== v7.6.4: переработанная «красивая» карта Млечного Пути =====
    1) глубокий фон с мягким виньеточным затемнением к углам;
-   2) светящийся диск (disk glow) + балдж;
-   3) 4 спиральных рукава с газовой подложкой, звёздной пылью,
-      HII-областями и тёмными пылевыми полосами;
-   4) плотные поля фоновых звёзд (гало + диск) с яркими «двойными»;
-   5) тонкая штриховая рамка-скаффолд по краю карты. */
+   2) диск галактики под наклоном: балдж + спиральные рукава с газом,
+      HII-областями и тёмными пылевыми полосами; наклон реализован
+      аффинной матрицей (rotate+scale), поэтому рукава выглядят
+      перспективно, а точка Солнца ложится ровно на рукав Ориона;
+   3) плотные поля фоновых звёзд (гало + диск) с яркими «двойными»;
+   4) тонкая штриховая рамка-скаффолд по краю карты. */
 
   // фон глубокого космоса + виньетка
   b.fillStyle = "rgba(4, 6, 14, 0.97)";
@@ -1843,28 +1890,37 @@ function buildMinimap() {
   // масштаб галактики относительно размера карточки (150 px -> K=1)
   const K = MM_S / 150;
 
-  // общий ореол дисков галактики (мягкое голубоватое свечение) — рисуется
-  // уже внутри translate(cx,cy), поэтому координаты центрированы на 0,0
-  b.save();
-  b.translate(cx, cy);
-  const FLAT = 0.78;                           // наклон диска (почти «с ребра»)
+  /* Наклон плоскости галактики: TILT_MM — сжатие по вертикали («с ребра»),
+     ROT_MM — поворот спирали в картинной плоскости. Все объекты галактики
+     рисуются в ЕДИНОЙ системе координат через applyMM(): так маркер Солнца
+     гарантированно попадает на рукав Ориона (совместимость координат). */
+  const TILT_MM = 0.62;
+  const ROT_MM = -0.42;
+  function applyMM(g) {
+    g.translate(cx, cy);
+    g.rotate(ROT_MM);
+    g.scale(1, TILT_MM);
+  }
 
-  const halo = b.createRadialGradient(0, 0, 0, 0, 0, 78 * K);
+  // общий ореол диска (мягкое голубоватое свечение) — в наклонной системе
+  b.save();
+  applyMM(b);
+  const halo = b.createRadialGradient(0, 0, 0, 0, 0, 80 * K);
   halo.addColorStop(0, "rgba(150,170,230,0.16)");
   halo.addColorStop(0.55, "rgba(120,140,210,0.07)");
   halo.addColorStop(1, "rgba(0,0,0,0)");
   b.fillStyle = halo;
-  b.beginPath(); b.ellipse(0, 0, 78 * K, 78 * FLAT * K, 0, 0, Math.PI * 2); b.fill();
+  b.beginPath(); b.arc(0, 0, 80 * K, 0, Math.PI * 2); b.fill();
 
   function spiralPt(t, phase, wind) {          // логарифмическая спираль
     const ang = phase + t * wind;
-    const rad = (7 + t * 57) * K;
-    return [Math.cos(ang) * rad, Math.sin(ang) * rad * FLAT];
+    const rad = (7 + t * 60) * K;
+    return [Math.cos(ang) * rad, Math.sin(ang) * rad];
   }
 
   // 4 основных рукава + ориентировочный рукав Ориона (между 2/3 и центром)
   const ARMS = [
-    { phase: 0.0,  color: [150, 175, 255], grains: 2600 },
+    { phase: 0.0,           color: [150, 175, 255], grains: 2600 },
     { phase: Math.PI,       color: [150, 175, 255], grains: 2600 },
     { phase: Math.PI / 2,   color: [255, 205, 150], grains: 2300 },
     { phase: -Math.PI / 2,  color: [255, 205, 150], grains: 2300 },
@@ -1922,22 +1978,23 @@ function buildMinimap() {
   }
 
   // балдж: эллиптическое утолщение из старых жёлто-красных звёзд
+  // (наклон диска уже даёт матрица applyMM — здесь круги в плоскости галактики)
   const bulge = b.createRadialGradient(0, 0, 0, 0, 0, 20 * K);
   bulge.addColorStop(0, "rgba(255,225,160,0.95)");
   bulge.addColorStop(0.35, "rgba(255,190,120,0.45)");
   bulge.addColorStop(1, "rgba(255,170,100,0)");
   b.fillStyle = bulge;
-  b.beginPath(); b.ellipse(0, 0, 20 * K, 20 * FLAT * K, 0, 0, Math.PI * 2); b.fill();
+  b.beginPath(); b.arc(0, 0, 20 * K, 0, Math.PI * 2); b.fill();
   for (let i = 0; i < 520; i++) {
     const rr = Math.pow(rnd(), 1.6) * 13 * K, aa = rnd() * Math.PI * 2;
     b.fillStyle = `rgba(255,${190 + rnd()*40 | 0},${120 + rnd()*60 | 0},${0.12 + rnd()*0.3})`;
-    b.beginPath(); b.arc(Math.cos(aa)*rr, Math.sin(aa)*rr*FLAT, (0.3 + rnd()*0.6)*K, 0, Math.PI*2); b.fill();
+    b.beginPath(); b.arc(Math.cos(aa)*rr, Math.sin(aa)*rr, (0.3 + rnd()*0.6)*K, 0, Math.PI*2); b.fill();
   }
   // активное ядро (стрельце A*)
   b.fillStyle = "rgba(255,245,220,0.95)";
   b.beginPath(); b.arc(0, 0, 1.6 * K, 0, Math.PI * 2); b.fill();
 
-  // шаровые скопления гало
+  // шаровые скопления гало — с мягким ореолом и ярким центром
   for (let i = 0; i < 34; i++) {
     const rr = (30 + rnd() * 40) * K, aa = rnd() * Math.PI * 2;
     const x = Math.cos(aa) * rr, y = Math.sin(aa) * rr * 0.95;
@@ -1947,9 +2004,8 @@ function buildMinimap() {
     b.beginPath(); b.arc(x, y, 0.4 * K, 0, Math.PI * 2); b.fill();
   }
 
-  /* ===== фоновые звёзды рисуются ПОСЛЕ translate и в центрированных
-     координатах (иначе упирались бы в левый верхний угол карты) ===== */
-  b.restore();                                 // выходим из центрированной системы
+  /* ===== фоновые звёзды рисуются ПОСЛЕ выхода из наклонной системы ===== */
+  b.restore();                                 // выходим из координат галактики
   // далёкие фоновые звёзды (гало + случайные) — плотнее и разнообразнее
   for (let i = 0; i < 420; i++) {
     const x = rnd() * MM_S, y = rnd() * MM_S;
@@ -1986,28 +2042,39 @@ function drawMinimap() {
   mctx.clearRect(0, 0, MM_S, MM_S);
   mctx.drawImage(mmBase, 0, 0, MM_S, MM_S);   // быстрый blit готовой картинки
 
-  // Солнечная система: на рукаве Ориона (~t=0.62), лёгкое «дыхание» вдоль него
+  /* v7.6.4: маркер Солнца в ТОЙ ЖЕ наклонной системе координат, что и рукава
+     (applyMM) — точка гарантированно лежит на рукаве Ориона. */
   const K = MM_S / 150;
-  const cx = MM_S / 2, cy = MM_S / 2, FLAT = 0.78;
+  const cx = MM_S / 2, cy = MM_S / 2;
+  const TILT_MM = 0.62, ROT_MM = -0.42;
+  mctx.save();
+  mctx.translate(cx, cy);
+  mctx.rotate(ROT_MM);
+  mctx.scale(1, TILT_MM);
   const tSun = 0.62 + 0.012 * Math.sin(getTimeSec() / 1.6);   // v7.4: виртуальные часы (пауза = стоп)
   const ang = 2.35 + tSun * 5.2;
-  const rad = (7 + tSun * 57) * K;
-  const sx = cx + Math.cos(ang) * rad, sy = cy + Math.sin(ang) * rad * FLAT;
+  const rad = (7 + tSun * 60) * K;
+  const sx = Math.cos(ang) * rad, sy = Math.sin(ang) * rad;
   const pulse = (4.6 + Math.sin(getTimeSec() / 0.48) * 1.2) * K;
   mctx.strokeStyle = "rgba(255, 215, 106, 0.8)";
   mctx.lineWidth = 1;
   mctx.beginPath(); mctx.arc(sx, sy, pulse, 0, Math.PI * 2); mctx.stroke();
   mctx.fillStyle = "#ffd75e";
   mctx.beginPath(); mctx.arc(sx, sy, 2.1 * K, 0, Math.PI * 2); mctx.fill();
-  // выноска к точке + подпись
+  // выноска к точке + подпись (подпись — вне наклона, чтобы текст не сплющивало)
   mctx.strokeStyle = "rgba(255,215,106,0.5)";
   mctx.beginPath(); mctx.moveTo(sx + 3*K, sy + 3*K); mctx.lineTo(sx + 12*K, sy + 14*K); mctx.stroke();
+  mctx.restore();
+
+  // подпись у точки Солнца (экранная система, без искажения шрифта)
+  const esx = cx + Math.cos(ROT_MM) * sx - Math.sin(ROT_MM) * sy * TILT_MM;
+  const esy = cy + Math.sin(ROT_MM) * sx + Math.cos(ROT_MM) * sy * TILT_MM;
   mctx.fillStyle = "rgba(255,225,150,0.95)";
   mctx.font = `600 ${Math.round(8 * K)}px 'Segoe UI', sans-serif`;
   mctx.textAlign = "left";
   /* v7.0: подпись сокращена до «Солнце» — длинная «Солнечная система» не
      влезала в карту и упиралась в край */
-  mctx.fillText("☉ Солнце", sx + 6 * K, sy + 22 * K);
+  mctx.fillText("☉ Солнце", esx + 6 * K, esy + 22 * K);
 
   // подписи
   mctx.fillStyle = "rgba(200, 215, 250, 0.9)";
@@ -2093,7 +2160,17 @@ function pickAny(mx, my) {
   if (p) return { planet: p, moon: null };
   /* v7.5: карликовые планеты — кликабельны при включённом слое */
   const d = state.showDwarfs ? pickDwarf(mx, my) : null;
-  if (d) return { dwarf: d };
+  if (d) {
+    /* v7.6.3: спутники карликовых планет тоже кликабельны (Харон, Дисномия…) */
+    let dm = null, dmDist = Infinity;
+    for (const m of (d.moonsList || [])) {
+      if (!m._screen) continue;   // v7.6.4: слой «Спутники» выключен → не кликабельны
+      const dist = Math.hypot(mx - m._screen.x, my - m._screen.y);
+      const hitR = Math.max(m._screen.r + 5, 10);
+      if (dist <= hitR && dist < dmDist) { dm = m; dmDist = dist; }
+    }
+    return { dwarf: d, dwarfMoon: dm };
+  }
   const a = state.showBelt ? pickAsteroid(mx, my) : null;
   if (a) return { asteroid: a };
   const c = state.showComets ? pickComet(mx, my) : null;
@@ -2142,6 +2219,43 @@ function showDwarfInfo(d) {
   infoMoons.textContent = d.moons === 0 ? "нет" : `${d.moons} — ${d.moonNote}`;
   infoType.textContent = d.type;
   infoDesc.textContent = d.desc;
+  infoPanel.classList.remove("hidden");
+}
+
+/* v7.6.4: карточка СПУТНИКА карликовой планеты (Харон, Никта, Дисномия,
+   MK 2, Хиака, Намака). Подпись строки расстояния — «до планеты» (как у лун),
+   значение — расстояние от центра материнского тела (км). */
+const DWARF_MOON_INFO = {
+  "Харон":    { distKm: 19591,  diameterKm: 1212, desc: "Крупнейший спутник Плутона — половина его диаметра. Обращается синхронно с Плутоном (приливный захват с двух сторон): система «двойная планета», оба тела вращаются вокруг общего барицентра, лежащего вне Плутона." },
+  "Никта":    { distKm: 48694,  diameterKm: undefined, desc: "Малый спутник Плутона неправильной формы (~160×143×110 км). Хаотично вращается: период обращения 24.9 сут, орбита между Гидрой и Стиксом." },
+  "Гидра":    { distKm: 64738,  diameterKm: undefined, desc: "Внешний из пяти известных спутников Плутона, самый яркий из малых (~51 км в поперечнике). Орбита 38.2 сут, обеим лунам приливного захвата нет." },
+  "Дисномия": { distKm: 37750,  diameterKm: undefined, desc: "Единственный спутник Эриды, открыт в 2005 г. вместе с ней (диаметр ≈ 600 км). Назван в честь дочери богини раздора. Период обращения 15.8 сут." },
+  "MK 2":     { distKm: 21100,  diameterKm: undefined, desc: "Тёмный спутник Макемаке, открытый телескопом Хаббл в 2015 г. (временное обозначение S/2015 (136472) 1). Диаметр предположительно < 100 км, орбита ~12.5 сут." },
+  "Хиака":    { distKm: 49880,  diameterKm: undefined, desc: "Внешний ледяной спутник Гаумеа (≈ 400 км). Назван в честь гавайской богини плодородия. Период обращения 49.1 сут." },
+  "Намака":   { distKm: 25656,  diameterKm: undefined, desc: "Внутренний спутник Гаумеа (≈ 170 км), назван в честь духа воды. Период обращения 34.7 сут; поверхность изо льда, как у самой Гаумеа." },
+};
+
+function showDwarfMoonInfo(d, m) {
+  state.selected = d;
+  if (infoDistLabel && !infoDistLabel.dataset.default) {
+    infoDistLabel.dataset.default = infoDistLabel.textContent;
+  }
+  const extra = DWARF_MOON_INFO[m.name] || {};
+  if (infoDistLabel) infoDistLabel.textContent = "Расстояние до планеты";
+  infoIcon.style.background = `radial-gradient(circle at 32% 30%, #f4f6fa, ${m.color} 55%, ${shadeDown(m.color)})`;
+  infoName.textContent = `${m.name}  ·  спутник ${d.name}`;
+  /* диаметр: если известен из справочника — показываем, иначе «оценочно» */
+  infoSize.textContent = extra.diameterKm
+    ? `≈ ${extra.diameterKm.toLocaleString("ru-RU")} км (диаметр)`
+    : "несколько десятков км (точный размер не измерен)";
+  infoDist.textContent = extra.distKm
+    ? `${extra.distKm.toLocaleString("ru-RU")} км от ${d.name.toLowerCase()}`
+    : "—";
+  infoPeriod.textContent = `${Math.abs(m.periodDays).toLocaleString("ru-RU", { maximumFractionDigits: 2 })} сут — орбитальный период`;
+  infoMoons.textContent = `спутник карликовой планеты ${d.name}`;
+  infoType.textContent = "Естественный спутник";
+  infoDesc.textContent = extra.desc ||
+    `${m.name} — естественный спутник ${d.name}. Нажмите на диск ${d.name.toLowerCase()}, чтобы увидеть данные о нём.`;
   infoPanel.classList.remove("hidden");
 }
 
@@ -2200,7 +2314,9 @@ function showInfo(p, moon = null, asteroid = null, comet = null, sun = null) {
     const peri = a.mainAU * (1 - a.ecc), aph = a.mainAU * (1 + a.ecc);
     infoDist.textContent = `${a.mainAU} а.е. (${Math.round(a.mainAU * 149.6).toLocaleString("ru-RU")} млн км) — большая полуось`;
     infoPeriod.textContent = `${formatPeriod(a.periodDays)} · e=${a.ecc}, перигелий ${peri.toFixed(2)} / афелий ${aph.toFixed(2)} а.е.`;
-    infoMoons.textContent = "Главный пояс астероидов";
+    /* v7.6.3: у Цереры спутников нет (Идда — кратер); строка больше не
+       показывает «Главный пояс» вместо данных о спутниках */
+    infoMoons.textContent = a.moons === 0 ? "нет" : `${a.moons} — ${a.moonNote}`;
     infoType.textContent = a.type;
     infoDesc.textContent = a.desc;
     infoPanel.classList.remove("hidden");
@@ -2268,7 +2384,9 @@ canvas.addEventListener("mousemove", (e) => {
       : hit.asteroid
       ? `${hit.asteroid.name} — астероид главного пояса (нажмите для подробностей)`
       : hit.dwarf
-      ? `${hit.dwarf.name} — карликовая планета (нажмите для подробностей)`
+      ? (hit.dwarfMoon
+        ? `${hit.dwarfMoon.name} — спутник карликовой планеты ${hit.dwarf.name}`
+        : `${hit.dwarf.name} — карликовая планета (нажмите для подробностей)`)
       : hit.moon
       ? `${hit.moon.name} — луна план. ${hit.planet.name} (нажмите для подробностей)`
       : hit.sun
@@ -2348,6 +2466,8 @@ canvas.addEventListener("click", (e) => {
   else if (hit && hit.comet) showInfo(null, null, null, hit.comet);
   else if (hit && hit.asteroid) showInfo(null, null, hit.asteroid);
   else if (hit && hit.sun) showInfo(null, null, null, null, hit.sun);   // v7.3: карточка Солнца
+  /* v7.6.4: клик по спутнику карликовой планеты (Харон, Дисномия…) — его карточка */
+  else if (hit && hit.dwarf && hit.dwarfMoon) showDwarfMoonInfo(hit.dwarf, hit.dwarfMoon);
   else if (hit && hit.dwarf) showDwarfInfo(hit.dwarf);                  // v7.5: карликовая планета
   else if (hit) showInfo(hit.planet, hit.moon);
   else hideInfo();
@@ -2394,6 +2514,8 @@ canvas.addEventListener("touchstart", (e) => {
     else if (hit.comet) showInfo(null, null, null, hit.comet);
     else if (hit.asteroid) showInfo(null, null, hit.asteroid);
     else if (hit.sun) showInfo(null, null, null, null, hit.sun);   // v7.3: карточка Солнца (тап)
+    /* v7.6.4: тап по спутнику карликовой планеты — его карточка */
+    else if (hit.dwarf && hit.dwarfMoon) showDwarfMoonInfo(hit.dwarf, hit.dwarfMoon);
     else if (hit.dwarf) showDwarfInfo(hit.dwarf);                  // v7.5: карликовая планета (тап)
     else showInfo(hit.planet, hit.moon);
     e.preventDefault();
