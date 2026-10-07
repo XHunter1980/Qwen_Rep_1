@@ -21,22 +21,15 @@ html, body {
 
 /* ---------- Верхняя панель ---------- */
 .topbar {
-  position: absolute;
-  top: 16px; left: 20px;
-  pointer-events: none;
-  z-index: 5;
-}
-/* v7.0: левая колонка — инфо-карточка в flow СРАЗУ ПОД картой Млечного Пути
-   (topbar'ом). Блок прижат к тому же левому краю, ширина совпадает с картой,
-   поэтому карточка визуально «продолжает» карту и гарантированно не накладывается
-   на правую панель управления. */
-.topbar-left {
   position: fixed;
-  top: 340px; left: 20px;
-  width: 280px;
-  z-index: 12;
-  pointer-events: none;    /* клики проходят сквозь пустые области блока */
+  top: 16px; left: 20px;
+  width: 236px;              /* v7.1: левая колонка: заголовок → карта (208) → инфо-окно */
+  z-index: 5;
+  pointer-events: none;      /* клики проходят сквозь пустые области */
 }
+.topbar .info-panel { pointer-events: auto; }
+/* v7.1: отдельный fixed-блок .topbar-left удалён — карточка теперь внутри
+   .topbar в flow, сразу под картой галактики. */
 .topbar h1 {
   font-size: 22px;
   font-weight: 600;
@@ -105,8 +98,8 @@ html, body {
 .panel-collapse.floating {
   position: fixed;
   left: auto;
-  top: 14px;
-  right: 14px;               /* верхний правый угол экрана */
+  top: -52px;                /* v7.1: над верхней гранью панели (.controls top:74px) */
+  right: 14px;               /* по горизонтали — над шапкой drawer'а */
   z-index: 30;
   opacity: 1 !important;
   pointer-events: auto;
@@ -272,13 +265,13 @@ html, body {
 #edgeZone.disabled { pointer-events: none; }
 
 
-/* v6.0: миникарта «Млечный Путь» — крупнее и детальнее (230 px) */
+/* v7.1: карта Млечного Пути уменьшена (208 px) */
 .minimap-wrap {
   position: relative;
   left: auto;
   margin-top: 10px;
-  width: 280px;
-  height: 280px;
+  width: 208px;
+  height: 208px;
   border: 1px solid rgba(120, 150, 220, 0.35);
   border-radius: 12px;
   overflow: hidden;
@@ -346,9 +339,8 @@ input[type="range"] {
 .toggle-block label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
 .toggle-block input { accent-color: #6a8dff; cursor: pointer; }
 
-/* v7.0: карточка живёт в flow блока .topbar-left (под картой галактики) —
-   больше НЕ fixed и НЕ в правом нижнем углу; она физически отделена от
-   панели управления и не может с ней коррелировать. */
+/* v7.1: карточка живёт в flow .topbar сразу под картой галактики —
+   физически отделена от панели управления справа и не пересекается с ней. */
 .info-panel {
   position: relative;
   top: auto; left: auto; right: auto; bottom: auto;
@@ -368,7 +360,7 @@ input[type="range"] {
   display: none;          /* скрытая карточка не занимает место под картой */
 }
 @media (max-width: 760px) {   /* узкий экран: колонка остаётся слева сверху */
-  .topbar-left { width: min(86vw, 280px); }
+  .topbar { width: min(86vw, 236px); }
   .info-panel { width: 100%; }
 }
 

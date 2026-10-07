@@ -15,17 +15,11 @@
     <!-- Верхняя панель: заголовок + под ним карта Млечного Пути -->
     <header class="topbar">
       <h1>☀️ Солнечная система</h1>
+      <!-- v7.1: инфо-карточка в flow СРАЗУ ПОД картой галактики -->
       <div class="minimap-wrap" title="Где наша система находится в Галактике">
-        <canvas id="minimap" width="280" height="280"></canvas>
+        <canvas id="minimap" width="200" height="200"></canvas>
       </div>
-    </header>
-
-    <!-- v7.0: информационная карточка объектов — ВНУТРИ блока левой колонки,
-         сразу ПОД картой Млечного Пути (в flow, а не fixed-накладка).
-         Левая колонка (topbar-left) физически отделена от панели управления
-         (drawer справа) и никогда с ней не пересекается. -->
-    <div class="topbar-left">
-    <aside id="infoPanel" class="info-panel hidden" aria-live="polite">
+      <aside id="infoPanel" class="info-panel hidden" aria-live="polite">
       <button id="btnCloseInfo" class="close-btn" title="Закрыть">✕</button>
       <div class="info-planet-icon" id="infoIcon"></div>
       <h2 id="infoName">—</h2>
@@ -38,13 +32,13 @@
       </ul>
       <p class="info-desc" id="infoDesc"></p>
     </aside>
-    </div><!-- /.topbar-left -->
+    </header>
 
     <!-- Панель управления: боковой drawer справа; сворачивается клавишей ◀ или H -->
     <div class="controls" role="group" aria-label="Управление симуляцией">
     <!-- v4.6: клавиша ◀/▶ перенесена из drawer'а на body — плавающая, видна
          всегда (внутри панели она уезжала за экран при сворачивании) -->
-      <div class="controls-header"><span>Управление</span><button id="btnCollapsePanel" class="panel-collapse always" title="Свернуть панель управления (H)">▲</button><span id="versionBadge" class="version-badge" title="Версия сборки — если её нет или она старая, вы открыли не тот архив"></span></div>
+      <div class="controls-header"><span>Управление</span><span id="versionBadge" class="version-badge" title="Версия сборки — если её нет или она старая, вы открыли не тот архив"></span></div>
       <div class="controls-body" id="controlsBody">
 
       <!-- Секция «Симуляция» -->
