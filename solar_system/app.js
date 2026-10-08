@@ -8,7 +8,7 @@
 
 /* Версия сборки — ТОЛЬКО номер, без описаний (по требованию).
    Видна в заголовке вкладки, в шапке страницы и в консоли. */
-const VERSION = "v7.72";
+const VERSION = "v7.73";
 document.title = `Солнечная система ${VERSION}`;
 console.log(`%c☀️ Солнечная система — сборка: ${VERSION}`, "color:#ffd75e;font-weight:bold");
 /* Версия сборки: бейдж в заголовке панели управления + сноска внизу по центру */
@@ -1307,7 +1307,9 @@ function drawDwarf(d, timeSec, layer) {
       ctx.arc(mpt.x, mpt.y, Math.max(1.4, R * m.relR), 0, Math.PI * 2);
       ctx.fill();
       m._screen = { x: mpt.x, y: mpt.y, r: Math.max(1.4, R * m.relR), planet: d.name };
-      if (state.showLabels || state.zoom > 2) {
+      /* Подпись — только слоем «Названия»: авто-подписи при зуме удалены,
+         иначе имена появлялись бы сами по себе при смене масштаба. */
+      if (state.showLabels) {
         ctx.fillStyle = "rgba(175, 190, 225, 0.75)";
         ctx.font = "10px 'Segoe UI', sans-serif";
         ctx.textAlign = "center";
@@ -1318,11 +1320,11 @@ function drawDwarf(d, timeSec, layer) {
     for (const m of d.moonsList) m._screen = null;
   }
 
-  /* Подпись имени — только при включённом слое «Названия» либо при крупном
-     зуме (>1.2×), чтобы далёкие тела можно было опознать, приближая картину.
-     Наведение курсора имя НЕ показывает: подсветка контура остаётся, а
-     подпись появляется/исчезает строго вместе с состоянием слоя. */
-  if (state.showLabels || state.zoom > 1.2) {
+  /* Подпись имени — только при включённом слое «Названия». Авто-подписи
+     при крупном зуме убраны: имена не должны появляться сами по себе при
+     смене масштаба. Наведение курсора имя здесь НЕ показывает — за это
+     отвечает единый hover-слой drawHoverLabel(). */
+  if (state.showLabels) {
     ctx.fillStyle = isSel ? "#ffd76a" : "rgba(190, 205, 235, 0.8)";
     ctx.font = (isSel ? "600 " : "") + "11px 'Segoe UI', sans-serif";
     ctx.textAlign = "center";
@@ -1335,7 +1337,7 @@ function pickDwarf(mx, my) {
   for (const d of DWARF_PLANETS) {
     if (!d._screen) continue;
     const dist = Math.hypot(mx - d._screen.x, my - d._screen.y);
-    const hitR = Math.max(d._screen.r + 6, 13);
+    const hitR = Math.max(d._screen.r + 6 / state.zoom, 13 / state.zoom);
     if (dist <= hitR && dist < bestDist) { best = d; bestDist = dist; }
   }
   return best;
@@ -1458,9 +1460,9 @@ function drawMoon(planet, moon, pos, R, highlight) {
   ctx.arc(mp.x, mp.y, mp.r, 0, Math.PI * 2);
   ctx.fill();
 
-  // имя — при включённых подписях, при выборе/наведении на планету-хозяина
-  // (highlight) либо при крупном зуме; наведение на саму луну имя не показывает
-  if (highlight || state.showLabels || state.zoom > 2) {
+  // имя — только при включённом слое «Названия» (highlight-подсветка и
+  // авто-подписи при зуме убраны: имена не появляются без команды пользователя)
+  if (state.showLabels) {
     ctx.fillStyle = "rgba(200, 210, 235, 0.75)";
     ctx.font = "10px 'Segoe UI', sans-serif";
     ctx.textAlign = "center";
@@ -1709,23 +1711,41 @@ function showAlienInfo(a) {
 }
 
 /* ---------- Главный цикл ---------- */
-/* Имя под наведённым телом — рисуется в конце кадра поверх всей сцены и
+/* Имя НАД наведённым телом — рисуется в конце кадра поверх всей сцены и
    только пока курсор на теле: при уходе с тела hovered обнуляется обработчиком
    mousemove и подпись исчезает в том же кадре. При выключенном слое «Названия»
-   это единственный способ увидеть имя — и оно не может «остаться» на экране. */
+   это единственный способ увидеть имя — и оно не может «остаться» на экране.
+
+   Позиционирование: _screen хранит позиции в МИРОВЫХ координатах (до
+   трансформации scale(zoom) вокруг центра Солнца), поэтому для подписи
+   координаты пересчитываются в экранные той же формулой, что и hit-тест
+   (обратное toWorld): x_экран = sunX + (x_мир − sunX)·zoom. Без этого при
+   зуме ≠ 1 подпись улетала от тела под курсором. */
 function drawHoverLabel() {
   const b = state.hovered;
   if (!b || !b._screen) return;
   const s = b._screen;
   const name = b.ship || b.race || b.name;
   if (!name) return;
+  const z = state.zoom, sx = sunX(), sy = sunY();
+  const ex = sx + (s.x - sx) * z;          // экранная X тела (в CSS-пикселях)
+  const ey = sy + (s.y - sy) * z;          // экранная Y тела
+  /* Экранная высота надписи привязывается к ТЕЛУ, а не к мировому радиусу:
+     у точечных тел (карликовые планеты, луны, астероиды) мировой r мал, но
+     на экране тело всегда видно не меньше ~5 px — иначе подпись тонула бы
+     в окрестных объектах/фоне. */
+  const erTop = Math.max(s.r * z, 5);      // смещение вверх от центра тела
   ctx.save();
+  ctx.setTransform(window.devicePixelRatio || 1, 0, 0, window.devicePixelRatio || 1, 0, 0);  // независимая от зума система координат
   ctx.font = "600 12px 'Segoe UI', sans-serif";
   ctx.textAlign = "center";
-  ctx.textBaseline = "top";
-  const y = Math.min(H - 20, s.y + s.r + 10);
+  ctx.textBaseline = "bottom";
+  /* Подпись сверху по центру тела; если не хватает места — снизу. */
+  let y = ey - erTop - 8;
+  if (y < 16) y = ey + erTop + 22;
   const w = ctx.measureText(name).width;
-  const bx = Math.max(4, Math.min(W - w - 12, s.x - w / 2 - 5));
+  const bx = Math.max(4, Math.min(W - w - 12, ex - w / 2 - 5));
+  /* Плашка под текстом — подпись читается на любом фоне (звёзды, диск тела). */
   ctx.fillStyle = "rgba(15, 20, 40, 0.78)";
   ctx.beginPath();
   if (ctx.roundRect) ctx.roundRect(bx, y - 2, w + 10, 18, 5);
@@ -2078,7 +2098,7 @@ function pickPlanet(mx, my) {
   for (const p of PLANETS) {
     if (!p._screen) continue;
     const d = Math.hypot(mx - p._screen.x, my - p._screen.y);
-    const hitR = Math.max(p._screen.r + 6, 14);
+    const hitR = Math.max(p._screen.r + 6 / state.zoom, 14 / state.zoom);
     if (d <= hitR && d < bestDist) { best = p; bestDist = d; }
   }
   return best;
@@ -2093,7 +2113,7 @@ function pickMoon(mx, my) {
     for (const m of p.majorMoons) {
       if (!m._screen) continue;
       const d = Math.hypot(mx - m._screen.x, my - m._screen.y);
-      const hitR = Math.max(m._screen.r + 8, 14);
+      const hitR = Math.max(m._screen.r + 8 / state.zoom, 14 / state.zoom);
       if (d <= hitR && d < bestDist) { best = { moon: m, planet: p }; bestDist = d; }
     }
   }
@@ -2106,7 +2126,7 @@ function pickComet(mx, my) {
   for (const c of COMETS) {
     if (!c._screen) continue;
     const d = Math.hypot(mx - c._screen.x, my - c._screen.y);
-    const hitR = Math.max(c._screen.r + 8, 15);
+    const hitR = Math.max(c._screen.r + 8 / state.zoom, 15 / state.zoom);
     if (d <= hitR && d < bestDist) { best = c; bestDist = d; }
   }
   return best;
@@ -2118,7 +2138,7 @@ function pickAsteroid(mx, my) {
   for (const a of BELT_ASTEROIDS) {
     if (!a._screen) continue;
     const d = Math.hypot(mx - a._screen.x, my - a._screen.y);
-    const hitR = Math.max(a._screen.r + 8, 14);
+    const hitR = Math.max(a._screen.r + 8 / state.zoom, 14 / state.zoom);
     if (d <= hitR && d < bestDist) { best = a; bestDist = d; }
   }
   return best;
@@ -2128,7 +2148,7 @@ function pickAsteroid(mx, my) {
 function pickSun(mx, my) {
   if (!SUN._screen) return null;
   const d = Math.hypot(mx - SUN._screen.x, my - SUN._screen.y);
-  return d <= Math.max(SUN._screen.r, 16) ? SUN : null;
+  return d <= Math.max(SUN._screen.r, 16 / state.zoom) ? SUN : null;
 }
 
 function pickAny(mx, my) {
@@ -2150,7 +2170,7 @@ function pickAny(mx, my) {
     for (const m of (d.moonsList || [])) {
       if (!m._screen) continue;   // v7.6.4: слой «Спутники» выключен → не кликабельны
       const dist = Math.hypot(mx - m._screen.x, my - m._screen.y);
-      const hitR = Math.max(m._screen.r + 8, 14);
+      const hitR = Math.max(m._screen.r + 8 / state.zoom, 14 / state.zoom);
       if (dist <= hitR && dist < dmDist) { dm = m; dmDist = dist; }
     }
     return { dwarf: d, dwarfMoon: dm };
