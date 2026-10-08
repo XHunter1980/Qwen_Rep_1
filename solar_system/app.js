@@ -8,7 +8,7 @@
 
 /* Версия сборки — ТОЛЬКО номер, без описаний (по требованию).
    Видна в заголовке вкладки, в шапке страницы и в консоли. */
-const VERSION = "v7.71";
+const VERSION = "v7.72";
 document.title = `Солнечная система ${VERSION}`;
 console.log(`%c☀️ Солнечная система — сборка: ${VERSION}`, "color:#ffd75e;font-weight:bold");
 /* Версия сборки: бейдж в заголовке панели управления + сноска внизу по центру */
@@ -600,7 +600,7 @@ function drawSun(timeSec) {
   ctx.beginPath();
   ctx.arc(cx, cy, R, 0, Math.PI * 2);
   ctx.fill();
-  if (state.showLabels || state.hovered === SUN) {
+  if (state.showLabels) {
     ctx.fillStyle = "rgba(255, 225, 150, 0.9)";
     ctx.font = "600 12px 'Segoe UI', sans-serif";
     ctx.textAlign = "center";
@@ -786,8 +786,8 @@ function drawComets(timeSec, layer) {
     ctx.fill();
 
     // подсветка выбора/наведения
-    const isSel = state.selected === c, isHov = state.hovered === c;
-    if (isSel || isHov) {
+    const isSel = state.selected === c;
+    if (isSel || state.hovered === c) {
       ctx.save();
       ctx.strokeStyle = isSel ? "rgba(255, 215, 106, 0.9)" : "rgba(160, 190, 255, 0.6)";
       ctx.lineWidth = isSel ? 2 : 1.5;
@@ -798,7 +798,9 @@ function drawComets(timeSec, layer) {
       ctx.restore();
     }
 
-    if ((state.showLabels || isHov) && (act > 0.15 || isSel || isHov)) {
+    /* Подпись имени — только при включённом слое «Названия». Наведение не
+       показывает имя: подсветка контура остаётся, подпись исчезает сразу. */
+    if (state.showLabels && (act > 0.15 || isSel)) {
       ctx.fillStyle = isSel ? "#ffd76a" : "rgba(200, 220, 250, 0.85)";
       ctx.font = (isSel ? "600 " : "") + "11px 'Segoe UI', sans-serif";
       ctx.textAlign = "center";
@@ -1085,8 +1087,7 @@ function drawBelt(timeSec, layer) {
     a._screen = { x: pos.x, y: pos.y, r: R };           // для попаданий курсора
 
     const isSel = state.selected === a;
-    const isHov = state.hovered === a;
-    if (isSel || isHov) {
+    if (isSel || state.hovered === a) {
       ctx.save();
       ctx.strokeStyle = isSel ? "rgba(255, 215, 106, 0.9)" : "rgba(160, 190, 255, 0.6)";
       ctx.lineWidth = isSel ? 2 : 1.5;
@@ -1126,7 +1127,7 @@ function drawBelt(timeSec, layer) {
       ctx.fill();
     }
 
-    if (state.showLabels || state.hovered === a) {
+    if (state.showLabels) {
       ctx.fillStyle = isSel ? "#ffd76a" : "rgba(205, 200, 190, 0.85)";
       ctx.font = (isSel ? "600 " : "") + "11px 'Segoe UI', sans-serif";
       ctx.textAlign = "center";
@@ -1257,8 +1258,7 @@ function drawDwarf(d, timeSec, layer) {
   if (behind && Math.hypot(pos.x - sunX(), pos.y - sunY()) < sunScreenR + R * 0.35) return;
 
   const isSel = state.selected === d;
-  const isHov = state.hovered === d;
-  if (isSel || isHov) {
+  if (isSel || state.hovered === d) {
     ctx.save();
     ctx.strokeStyle = isSel ? "rgba(255, 215, 106, 0.9)" : "rgba(160, 190, 255, 0.6)";
     ctx.lineWidth = isSel ? 2 : 1.5;
@@ -1307,7 +1307,7 @@ function drawDwarf(d, timeSec, layer) {
       ctx.arc(mpt.x, mpt.y, Math.max(1.4, R * m.relR), 0, Math.PI * 2);
       ctx.fill();
       m._screen = { x: mpt.x, y: mpt.y, r: Math.max(1.4, R * m.relR), planet: d.name };
-      if (state.showLabels || state.zoom > 2 || state.hovered === m) {
+      if (state.showLabels || state.zoom > 2) {
         ctx.fillStyle = "rgba(175, 190, 225, 0.75)";
         ctx.font = "10px 'Segoe UI', sans-serif";
         ctx.textAlign = "center";
@@ -1318,10 +1318,11 @@ function drawDwarf(d, timeSec, layer) {
     for (const m of d.moonsList) m._screen = null;
   }
 
-  /* Подпись: если названия включены — всегда; при крупном зуме (>1.2×) —
-     чтобы далёкие тела можно было опознать; и всегда при наведении курсора
-     (подсказка именем вместо HTML-tooltip: видна только пока курсор на теле). */
-  if (state.showLabels || state.zoom > 1.2 || isHov) {
+  /* Подпись имени — только при включённом слое «Названия» либо при крупном
+     зуме (>1.2×), чтобы далёкие тела можно было опознать, приближая картину.
+     Наведение курсора имя НЕ показывает: подсветка контура остаётся, а
+     подпись появляется/исчезает строго вместе с состоянием слоя. */
+  if (state.showLabels || state.zoom > 1.2) {
     ctx.fillStyle = isSel ? "#ffd76a" : "rgba(190, 205, 235, 0.8)";
     ctx.font = (isSel ? "600 " : "") + "11px 'Segoe UI', sans-serif";
     ctx.textAlign = "center";
@@ -1356,10 +1357,9 @@ function drawPlanet(p, timeSec, layer) {
   if (behind && Math.hypot(pos.x - sunX(), pos.y - sunY()) < sunScreenR + R * 0.35) return;
 
   const isSel = state.selected === p;
-  const isHov = state.hovered === p;
 
   // подсветка выбранной/наведённой
-  if (isSel || isHov) {
+  if (isSel || state.hovered === p) {
     ctx.save();
     ctx.strokeStyle = isSel ? "rgba(255, 215, 106, 0.9)" : "rgba(160, 190, 255, 0.6)";
     ctx.lineWidth = isSel ? 2 : 1.5;
@@ -1417,12 +1417,13 @@ function drawPlanet(p, timeSec, layer) {
 
   // крупнейшие луны (опциональный слой): всегда поверх диска планеты
   if (state.showMoons && p.majorMoons) {
-    for (const m of p.majorMoons) m._hovered = state.hovered === m;
     for (const m of p.majorMoons) drawMoon(p, m, pos, R, isSel);
   }
 
-  // подпись (наведения курсора достаточно, даже если слой «Названия» выключен)
-  if (state.showLabels || isHov) {
+  /* Подпись имени — только при включённом слое «Названия». Наведение не
+     показывает имя (только подсветка контура), поэтому при выключенном
+     слое подпись гарантированно не может «остаться» на экране. */
+  if (state.showLabels) {
     ctx.fillStyle = isSel ? "#ffd76a" : "rgba(210, 222, 245, 0.85)";
     ctx.font = (isSel ? "600 " : "") + "12px 'Segoe UI', sans-serif";
     ctx.textAlign = "center";
@@ -1457,9 +1458,9 @@ function drawMoon(planet, moon, pos, R, highlight) {
   ctx.arc(mp.x, mp.y, mp.r, 0, Math.PI * 2);
   ctx.fill();
 
-  // имя — при выборе/наведении на планету, при включённых подписях
-  // или при крупном зуме (луны можно опознать, приближая картину)
-  if (highlight || state.showLabels || state.zoom > 2 || moon._hovered) {
+  // имя — при включённых подписях, при выборе/наведении на планету-хозяина
+  // (highlight) либо при крупном зуме; наведение на саму луну имя не показывает
+  if (highlight || state.showLabels || state.zoom > 2) {
     ctx.fillStyle = "rgba(200, 210, 235, 0.75)";
     ctx.font = "10px 'Segoe UI', sans-serif";
     ctx.textAlign = "center";
@@ -1656,8 +1657,8 @@ function drawAlien(nowSec) {
   }
 
   // подсветка при наведении/выборе
-  const isSel = state.selected === a, isHov = state.hovered === a;
-  if (isSel || isHov) {
+  const isSel = state.selected === a;
+  if (isSel || state.hovered === a) {
     ctx.strokeStyle = isSel ? "rgba(255,215,106,0.9)" : hexToRgba(a.color, 0.6);
     ctx.lineWidth = 1.5; ctx.setLineDash(isSel ? [] : [3, 4]);
     ctx.beginPath(); ctx.arc(pos.x, pos.y, 13 * sc, 0, Math.PI * 2); ctx.stroke();
@@ -1708,6 +1709,33 @@ function showAlienInfo(a) {
 }
 
 /* ---------- Главный цикл ---------- */
+/* Имя под наведённым телом — рисуется в конце кадра поверх всей сцены и
+   только пока курсор на теле: при уходе с тела hovered обнуляется обработчиком
+   mousemove и подпись исчезает в том же кадре. При выключенном слое «Названия»
+   это единственный способ увидеть имя — и оно не может «остаться» на экране. */
+function drawHoverLabel() {
+  const b = state.hovered;
+  if (!b || !b._screen) return;
+  const s = b._screen;
+  const name = b.ship || b.race || b.name;
+  if (!name) return;
+  ctx.save();
+  ctx.font = "600 12px 'Segoe UI', sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  const y = Math.min(H - 20, s.y + s.r + 10);
+  const w = ctx.measureText(name).width;
+  const bx = Math.max(4, Math.min(W - w - 12, s.x - w / 2 - 5));
+  ctx.fillStyle = "rgba(15, 20, 40, 0.78)";
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(bx, y - 2, w + 10, 18, 5);
+  else ctx.rect(bx, y - 2, w + 10, 18);
+  ctx.fill();
+  ctx.fillStyle = "#dce7ff";
+  ctx.fillText(name, bx + (w + 10) / 2, y + 1);
+  ctx.restore();
+}
+
 function frame(now) {
   const dt = Math.min(0.05, (now - lastT) / 1000);
   lastT = now;
@@ -1776,6 +1804,9 @@ function frame(now) {
   ctx.restore();
 
   drawMinimap();                         // миникарта: положение системы в Млечном Пути (вне зума)
+
+  /* Подпись имени наведённого тела — самым последним слоем, поверх всего. */
+  drawHoverLabel();
 
   requestAnimationFrame(frame);
 }
@@ -2340,26 +2371,26 @@ function toWorld(mx, my) {
   return { x: (mx - sx) / state.zoom + sx, y: (my - sy) / state.zoom + sy };
 }
 
-/* HTML-подсказки (tooltip) убраны: отклик на наведение — подсветка контура
-   тела и подпись его имени прямо на канвасе (видна, пока курсор на теле). */
+/* Отклик на наведение — подсветка контура тела (пунктирный ореол).
+   Имя при наведении НЕ показывается: подписи управляются только слоем
+   «Названия» (плюс авто-подписи карликовых планет/лун при крупном зуме),
+   поэтому при выключенном слое имя не может появиться и «остаться». */
 canvas.addEventListener("mousemove", (e) => {
   const cp = canvasPoint(e);
   const wpt = toWorld(cp.x, cp.y);
   const hit = pickAny(wpt.x, wpt.y);
-  /* Подписью имени на канвасе отвечаем на наведение вместо HTML-tooltip:
-     hovered хранит конкретное тело (планета/карликовая планета/спутник/
-     астероид/комета/НЛО/Солнце), подпись рисуется ровно над ним и исчезает,
-     как только курсор уходит с тела — поэтому имена не «остаются» при
-     выключенном слое «Названия». */
+  /* hovered хранит конкретное тело (планета/карликовая планета/спутник/
+     астероид/комета/НЛО/Солнце) — используется только для подсветки контура. */
   state.hovered = hit
     ? (hit.alien || hit.comet || hit.asteroid || hit.dwarfMoon || hit.dwarf || hit.moon || hit.planet || hit.sun || null)
     : null;
   canvas.classList.toggle("hovering", !!hit);
 });
 
-canvas.addEventListener("mouseleave", () => {
-  state.hovered = null;
-});
+/* Сброс наведения: при уходе курсора с канваса и при потере фокуса
+   окном — чтобы подсветка не могла «зависнуть». */
+canvas.addEventListener("mouseleave", () => { state.hovered = null; });
+window.addEventListener("blur", () => { state.hovered = null; });
 
 /* ---------- Панорамирование карты («сцепиться мышкой и тащить») ----------
    mousedown по фону (не по телу) захватывает камеру; движение с зажатой
