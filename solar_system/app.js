@@ -8,7 +8,7 @@
 
 /* Версия сборки — ТОЛЬКО номер, без описаний (по требованию).
    Видна в заголовке вкладки, в шапке страницы и в консоли. */
-const VERSION = "v7.73";
+const VERSION = "v7.74";
 document.title = `Солнечная система ${VERSION}`;
 console.log(`%c☀️ Солнечная система — сборка: ${VERSION}`, "color:#ffd75e;font-weight:bold");
 /* Версия сборки: бейдж в заголовке панели управления + сноска внизу по центру */
@@ -1730,29 +1730,39 @@ function drawHoverLabel() {
   const z = state.zoom, sx = sunX(), sy = sunY();
   const ex = sx + (s.x - sx) * z;          // экранная X тела (в CSS-пикселях)
   const ey = sy + (s.y - sy) * z;          // экранная Y тела
-  /* Экранная высота надписи привязывается к ТЕЛУ, а не к мировому радиусу:
-     у точечных тел (карликовые планеты, луны, астероиды) мировой r мал, но
-     на экране тело всегда видно не меньше ~5 px — иначе подпись тонула бы
-     в окрестных объектах/фоне. */
-  const erTop = Math.max(s.r * z, 5);      // смещение вверх от центра тела
+  /* Радиус тела НА ЭКРАНЕ. Рисуем канвас с трансформацией setTransform(dpr…),
+     поэтому позиции и размеры в _screen — ЛОГИЧЕСКИЕ px (CSS), а физический
+     размер пикселя учитывает dpr. Для точечных тел (луны, карлики, астероиды)
+     берём минимально различимый радиус, чтобы подпись не «тонула» в фоне. */
+  const erPx = Math.max(s.r * z, 6);       // экранный радиус лог. px
   ctx.save();
-  ctx.setTransform(window.devicePixelRatio || 1, 0, 0, window.devicePixelRatio || 1, 0, 0);  // независимая от зума система координат
+  ctx.setTransform(window.devicePixelRatio || 1, 0, 0, window.devicePixelRatio || 1, 0, 0);
   ctx.font = "600 12px 'Segoe UI', sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "bottom";
-  /* Подпись сверху по центру тела; если не хватает места — снизу. */
-  let y = ey - erTop - 8;
-  if (y < 16) y = ey + erTop + 22;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";         // базовая линия текста = низ глифов (без засечек вниз)
   const w = ctx.measureText(name).width;
-  const bx = Math.max(4, Math.min(W - w - 12, ex - w / 2 - 5));
+  const padX = 6, boxH = 18, gap = 4;      // внутренние отступы плашки
+  const boxW = w + padX * 2;
+  /* Плашка ЦЕНТРИРУЕТСЯ по X тела и стоит СРАЗУ над его краем:
+       нижняя граница рамки = ey − erPx − gap  →  текст лежит внутри рамки,
+       а сама рамка касается верхнего контура тела. Никакого «зазора выше
+       своей области». Если сверху не хватает места — зеркально снизу. */
+  let byBottom = ey - erPx - gap;
+  if (byBottom - boxH < 4) byBottom = ey + erPx + gap + boxH;   // внизу тела
+  let bxLeft = ex - boxW / 2;
+  bxLeft = Math.max(4, Math.min(W - boxW - 4, bxLeft));         // не за края экрана
+  const byTop = byBottom - boxH;
   /* Плашка под текстом — подпись читается на любом фоне (звёзды, диск тела). */
   ctx.fillStyle = "rgba(15, 20, 40, 0.78)";
   ctx.beginPath();
-  if (ctx.roundRect) ctx.roundRect(bx, y - 2, w + 10, 18, 5);
-  else ctx.rect(bx, y - 2, w + 10, 18);
+  if (ctx.roundRect) ctx.roundRect(bxLeft, byTop, boxW, boxH, 5);
+  else ctx.rect(bxLeft, byTop, boxW, boxH);
   ctx.fill();
   ctx.fillStyle = "#dce7ff";
-  ctx.fillText(name, bx + (w + 10) / 2, y + 1);
+  /* Текст по центру плашки: baseline подобран так, чтобы глифы сидели
+     строго внутри рамки (между byTop+padY и byBottom−padY). */
+  const textBaselineY = byTop + boxH - 5;  // 5 px от нижней границы рамки
+  ctx.fillText(name, bxLeft + padX, textBaselineY);
   ctx.restore();
 }
 
