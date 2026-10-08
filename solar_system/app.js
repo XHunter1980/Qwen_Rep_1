@@ -2105,7 +2105,8 @@ function pickPlanet(mx, my) {
   return best;
 }
 
-/* Клик/наведение на луну — возвращаем планету-хозяина + саму луну */
+/* Клик/наведение на луну — возвращаем планету-хозяина + саму луну.
+   v7.7: hitR в мировых единицах (до scale(zoom)) — попадать стало легче при зуме >1 */
 function pickMoon(mx, my) {
   let best = null, bestDist = Infinity;
   for (const p of PLANETS) {
@@ -2113,7 +2114,7 @@ function pickMoon(mx, my) {
     for (const m of p.majorMoons) {
       if (!m._screen) continue;
       const d = Math.hypot(mx - m._screen.x, my - m._screen.y);
-      const hitR = Math.max(m._screen.r + 5, 10);
+      const hitR = Math.max(m._screen.r + 8, 14);
       if (d <= hitR && d < bestDist) { best = { moon: m, planet: p }; bestDist = d; }
     }
   }
@@ -2126,7 +2127,7 @@ function pickComet(mx, my) {
   for (const c of COMETS) {
     if (!c._screen) continue;
     const d = Math.hypot(mx - c._screen.x, my - c._screen.y);
-    const hitR = Math.max(c._screen.r + 6, 13);
+    const hitR = Math.max(c._screen.r + 8, 15);
     if (d <= hitR && d < bestDist) { best = c; bestDist = d; }
   }
   return best;
@@ -2138,7 +2139,7 @@ function pickAsteroid(mx, my) {
   for (const a of BELT_ASTEROIDS) {
     if (!a._screen) continue;
     const d = Math.hypot(mx - a._screen.x, my - a._screen.y);
-    const hitR = Math.max(a._screen.r + 5, 12);
+    const hitR = Math.max(a._screen.r + 8, 14);
     if (d <= hitR && d < bestDist) { best = a; bestDist = d; }
   }
   return best;
@@ -2154,8 +2155,12 @@ function pickSun(mx, my) {
 function pickAny(mx, my) {
   const al = alienState.enabled ? pickAlien(mx, my) : null;
   if (al) return { alien: al };
-  const pm = pickMoon(mx, my);
-  if (pm) return { planet: pm.planet, moon: pm.moon };
+  /* v7.7: спутники — САМЫЕ НИЖЕ в приоритете хиттеста. Раньше pickMoon/shares
+     шли первыми и крошечная точка луны перекрывала крупный диск планеты или
+     карликовой планеты: наведение «срабатывало» на луну, а тултип показывал
+     её подпись, из-за чего казалось, что подсказка появляется не там, где
+     курсор реально стоит. Теперь тело под курсором выбирается по размеру
+     проекции: планета/карликовая планета > спутник. */
   const p = pickPlanet(mx, my);
   if (p) return { planet: p, moon: null };
   /* v7.5: карликовые планеты — кликабельны при включённом слое */
@@ -2166,11 +2171,13 @@ function pickAny(mx, my) {
     for (const m of (d.moonsList || [])) {
       if (!m._screen) continue;   // v7.6.4: слой «Спутники» выключен → не кликабельны
       const dist = Math.hypot(mx - m._screen.x, my - m._screen.y);
-      const hitR = Math.max(m._screen.r + 5, 10);
+      const hitR = Math.max(m._screen.r + 8, 14);
       if (dist <= hitR && dist < dmDist) { dm = m; dmDist = dist; }
     }
     return { dwarf: d, dwarfMoon: dm };
   }
+  const pm = pickMoon(mx, my);
+  if (pm) return { planet: pm.planet, moon: pm.moon };
   const a = state.showBelt ? pickAsteroid(mx, my) : null;
   if (a) return { asteroid: a };
   const c = state.showComets ? pickComet(mx, my) : null;
@@ -2361,6 +2368,20 @@ document.getElementById("btnCloseInfo").addEventListener("click", hideInfo);
 /* ---------- Мышь: наведение, клик ---------- */
 /* v7.7: tooltip-элемент удалён из DOM — подсказки больше не используются. */
 
+/* v7.7: курсорные координаты -> «пиксели холста».
+   Раньше в pickAny() передавались e.clientX/e.clientY напрямую, а _screen-
+   позиции тел пишутся в системе ctx.setTransform(dpr,...), т.е. в CSS-пикселях
+   ЛОГИЧЕСКОГО размера окна. При devicePixelRatio != 1 (Retina/масштаб ОС) и
+   при любом смещении канваса относительно viewport (position:relative внутри
+   #app, полноэкранный режим с другим origin) эти системы расходятся — и
+   тултип появлялся НЕ возле тела под курсором (жалоба на Хаумеа). Теперь
+   берём реальный rect канваса и приводим к его внутренней системе координат;
+   для hit-теста дополнительно делим на zoom вокруг центра Солнца (toWorld). */
+function canvasPoint(e) {
+  const r = canvas.getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top };
+}
+
 /* Преобразование экранных координат курсора в координаты «мира» с учётом
    текущего масштаба вида (state.zoom). Центр масштабирования — экранная
    середина; без этого клики и наведение «мимо» промахивались бы при zoom≠1. */
@@ -2377,7 +2398,8 @@ function toWorld(mx, my) {
    курсора. Теперь единственный отклик на наведение — подсветка контура
    тела на канвасе (+ подписи названий, если слой «Названия» включён). */
 canvas.addEventListener("mousemove", (e) => {
-  const wpt = toWorld(e.clientX, e.clientY);
+  const cp = canvasPoint(e);
+  const wpt = toWorld(cp.x, cp.y);
   const hit = pickAny(wpt.x, wpt.y);
   state.hovered = hit ? (hit.alien || hit.comet || hit.asteroid || hit.dwarf || hit.planet) : null;
   canvas.classList.toggle("hovering", !!hit);
@@ -2404,7 +2426,8 @@ function clampPan() {
 
 canvas.addEventListener("mousedown", (e) => {
   if (e.button !== 0) return;
-  const wpt = toWorld(e.clientX, e.clientY);
+  const cp = canvasPoint(e);
+  const wpt = toWorld(cp.x, cp.y);
   if (pickAny(wpt.x, wpt.y)) return;   // нажатие по телу — не тянем карту
   dragging = true;
   dragMoved = false;
@@ -2442,7 +2465,8 @@ canvas.addEventListener("click", (e) => {
      карточка Солнца/планеты закрывалась сразу после открытия. */
   if (e.target && e.target.closest &&
       e.target.closest(".controls, .info-panel, #btnCollapsePanel, #btnFullscreen")) return;
-  const wpt = toWorld(e.clientX, e.clientY);
+  const cp = canvasPoint(e);
+  const wpt = toWorld(cp.x, cp.y);
   const hit = pickAny(wpt.x, wpt.y);
   if (hit && hit.alien) showAlienInfo(hit.alien);
   else if (hit && hit.comet) showInfo(null, null, null, hit.comet);
@@ -2488,7 +2512,8 @@ canvas.addEventListener("touchstart", (e) => {
   const t = e.touches[0];
   touchLastX = t.clientX;
   touchLastY = t.clientY;
-  const wpt = toWorld(t.clientX, t.clientY);
+  const tr = canvas.getBoundingClientRect();
+  const wpt = toWorld(t.clientX - tr.left, t.clientY - tr.top);
   const hit = pickAny(wpt.x, wpt.y);
   if (hit) {
     touchMode = "tap";                 // палец на теле — это выбор, не перетаскивание
