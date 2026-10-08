@@ -8,7 +8,7 @@
 
 /* Версия сборки — ТОЛЬКО номер, без описаний (по требованию).
    Видна в заголовке вкладки, в шапке страницы и в консоли. */
-const VERSION = "v7.74";
+const VERSION = "v7.75";
 document.title = `Солнечная система ${VERSION}`;
 console.log(`%c☀️ Солнечная система — сборка: ${VERSION}`, "color:#ffd75e;font-weight:bold");
 /* Версия сборки: бейдж в заголовке панели управления + сноска внизу по центру */
@@ -2265,13 +2265,13 @@ function showDwarfMoonInfo(d, m) {
     ? `≈ ${extra.diameterKm.toLocaleString("ru-RU")} км (диаметр)`
     : "несколько десятков км (точный размер не измерен)";
   infoDist.textContent = extra.distKm
-    ? `${extra.distKm.toLocaleString("ru-RU")} км от ${d.name.toLowerCase()}`
+    ? `${extra.distKm.toLocaleString("ru-RU")} км от ${d.name}`
     : "—";
   infoPeriod.textContent = `${Math.abs(m.periodDays).toLocaleString("ru-RU", { maximumFractionDigits: 2 })} сут — орбитальный период`;
   infoMoons.textContent = `спутник карликовой планеты ${d.name}`;
   infoType.textContent = "Естественный спутник";
   infoDesc.textContent = extra.desc ||
-    `${m.name} — естественный спутник ${d.name}. Нажмите на диск ${d.name.toLowerCase()}, чтобы увидеть данные о нём.`;
+    `${m.name} — естественный спутник ${d.name}. Нажмите на диск ${d.name}, чтобы увидеть данные о нём.`;
   infoPanel.classList.remove("hidden");
 }
 
@@ -2346,13 +2346,13 @@ function showInfo(p, moon = null, asteroid = null, comet = null, sun = null) {
     infoName.textContent = `${moon.name}  ·  ${moon.nameEn}`;
     const diaKm = Math.round(moon.relR * 12742);
     infoSize.textContent = `≈ ${diaKm.toLocaleString("ru-RU")} км (диаметр)`;
-    infoDist.textContent = `${moon.distKm.toLocaleString("ru-RU")} км от ${p.name.toLowerCase()}`;
+    infoDist.textContent = `${moon.distKm.toLocaleString("ru-RU")} км от ${p.name}`;
     const retro = moon.periodDays < 0 ? " (ретроградное обращение)" : "";
     infoPeriod.textContent = `${Math.abs(moon.periodDays).toLocaleString("ru-RU", { maximumFractionDigits: 3 })} сут${retro}`;
     infoMoons.textContent = `спутник план. ${p.name}`;
     infoType.textContent = "Естественный спутник";
     infoDesc.textContent = `${moon.name} — естественный спутник планеты ${p.name}. ` +
-      `Нажмите на диск ${p.name.toLowerCase()}, чтобы увидеть данные о планете.`;
+      `Нажмите на диск ${p.name}, чтобы увидеть данные о планете.`;
   } else {
     setDistLabel(infoDistLabel ? infoDistLabel.dataset.default || "Расстояние от Солнца" : null);
     infoIcon.style.background = `radial-gradient(circle at 32% 30%, ${p.shades[0]}, ${p.shades[1]} 55%, ${p.shades[2]})`;
