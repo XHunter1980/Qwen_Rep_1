@@ -412,20 +412,8 @@ input[type="range"] {
   color: #b9c6e2;
 }
 
-/* ---------- Подсказка при наведении ---------- */
-.tooltip {
-  position: absolute;
-  padding: 4px 10px;
-  font-size: 13px;
-  background: rgba(20, 26, 48, 0.92);
-  border: 1px solid rgba(140, 170, 240, 0.4);
-  border-radius: 8px;
-  pointer-events: none;
-  z-index: 30;
-  white-space: nowrap;
-  transform: translate(-50%, -140%);
-}
-.tooltip.hidden { display: none; }
+/* v7.7: подсказки при наведении (tooltip) убраны из интерфейса —
+   стили удалены вместе с DOM-элементом. */
 
 /* ---------- Сноска ---------- */
 /* Версия сборки — внизу по центру, единственное отображение версии */

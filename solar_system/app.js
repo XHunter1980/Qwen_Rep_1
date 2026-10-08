@@ -8,7 +8,7 @@
 
 /* Версия сборки — ТОЛЬКО номер, без описаний (по требованию).
    Видна в заголовке вкладки, в шапке страницы и в консоли. */
-const VERSION = "v7.6.4";
+const VERSION = "v7.7";
 document.title = `Солнечная система ${VERSION}`;
 console.log(`%c☀️ Солнечная система — сборка: ${VERSION}`, "color:#ffd75e;font-weight:bold");
 /* Версия сборки: бейдж в заголовке панели управления + сноска внизу по центру */
@@ -841,7 +841,7 @@ function drawComets(timeSec, layer) {
     ctx.fill();
 
     // подсветка выбора/наведения
-    const isSel = state.selected === c, isHov = state.hovered === c;
+    const isSel = state.selected === c, isHov = false; /* v7.7: hover-подсветка убрана */
     if (isSel || isHov) {
       ctx.save();
       ctx.strokeStyle = isSel ? "rgba(255, 215, 106, 0.9)" : "rgba(160, 190, 255, 0.6)";
@@ -1140,7 +1140,7 @@ function drawBelt(timeSec, layer) {
     a._screen = { x: pos.x, y: pos.y, r: R };           // для попаданий курсора
 
     const isSel = state.selected === a;
-    const isHov = state.hovered === a;
+    const isHov = false; /* v7.7: hover-подсветка убрана */
     if (isSel || isHov) {
       ctx.save();
       ctx.strokeStyle = isSel ? "rgba(255, 215, 106, 0.9)" : "rgba(160, 190, 255, 0.6)";
@@ -1312,7 +1312,7 @@ function drawDwarf(d, timeSec, layer) {
   if (behind && Math.hypot(pos.x - sunX(), pos.y - sunY()) < sunScreenR + R * 0.35) return;
 
   const isSel = state.selected === d;
-  const isHov = state.hovered === d;
+  const isHov = false; /* v7.7: hover-подсветка убрана */
   if (isSel || isHov) {
     ctx.save();
     ctx.strokeStyle = isSel ? "rgba(255, 215, 106, 0.9)" : "rgba(160, 190, 255, 0.6)";
@@ -1410,7 +1410,7 @@ function drawPlanet(p, timeSec, layer) {
   if (behind && Math.hypot(pos.x - sunX(), pos.y - sunY()) < sunScreenR + R * 0.35) return;
 
   const isSel = state.selected === p;
-  const isHov = state.hovered === p;
+  const isHov = false; /* v7.7: hover-подсветка убрана */
 
   // подсветка выбранной/наведённой
   if (isSel || isHov) {
@@ -1471,7 +1471,7 @@ function drawPlanet(p, timeSec, layer) {
 
   // крупнейшие луны (опциональный слой): всегда поверх диска планеты
   if (state.showMoons && p.majorMoons) {
-    for (const m of p.majorMoons) drawMoon(p, m, pos, R, isSel || isHov);
+    for (const m of p.majorMoons) drawMoon(p, m, pos, R, isSel);
   }
 
   // подпись
@@ -1708,7 +1708,7 @@ function drawAlien(nowSec) {
   }
 
   // подсветка при наведении/выборе
-  const isSel = state.selected === a, isHov = state.hovered === a;
+  const isSel = state.selected === a, isHov = false; /* v7.7: hover-подсветка убрана */
   if (isSel || isHov) {
     ctx.strokeStyle = isSel ? "rgba(255,215,106,0.9)" : hexToRgba(a.color, 0.6);
     ctx.lineWidth = 1.5; ctx.setLineDash(isSel ? [] : [3, 4]);
@@ -2358,8 +2358,8 @@ function hideInfo() {
 
 document.getElementById("btnCloseInfo").addEventListener("click", hideInfo);
 
-/* ---------- Мышь: наведение, клик, tooltip ---------- */
-const tooltip = document.getElementById("tooltip");
+/* ---------- Мышь: наведение, клик ---------- */
+/* v7.7: tooltip-элемент удалён из DOM — подсказки больше не используются. */
 
 /* Преобразование экранных координат курсора в координаты «мира» с учётом
    текущего масштаба вида (state.zoom). Центр масштабирования — экранная
@@ -2371,38 +2371,20 @@ function toWorld(mx, my) {
   return { x: (mx - sx) / state.zoom + sx, y: (my - sy) / state.zoom + sy };
 }
 
+/* v7.7: HTML-подсказки (tooltip) убраны ПОЛНОСТЬЮ для всех тел: они
+   позиционировались CSS-смещением translate(-50%, -140%) и на больших
+   объектах (карликовые планеты, гиганты при зуме) улетали далеко от
+   курсора. Теперь единственный отклик на наведение — подсветка контура
+   тела на канвасе (+ подписи названий, если слой «Названия» включён). */
 canvas.addEventListener("mousemove", (e) => {
   const wpt = toWorld(e.clientX, e.clientY);
   const hit = pickAny(wpt.x, wpt.y);
   state.hovered = hit ? (hit.alien || hit.comet || hit.asteroid || hit.dwarf || hit.planet) : null;
   canvas.classList.toggle("hovering", !!hit);
-  if (hit) {
-    tooltip.textContent = hit.alien
-      ? `🛸 ${hit.alien.ship} — незваный гость (нажмите для подробностей)`
-      : hit.comet
-      ? `${hit.comet.name} — комета (нажмите для подробностей)`
-      : hit.asteroid
-      ? `${hit.asteroid.name} — астероид главного пояса (нажмите для подробностей)`
-      : hit.dwarf
-      ? (hit.dwarfMoon
-        ? `${hit.dwarfMoon.name} — спутник карликовой планеты ${hit.dwarf.name}`
-        : `${hit.dwarf.name} — карликовая планета (нажмите для подробностей)`)
-      : hit.moon
-      ? `${hit.moon.name} — луна план. ${hit.planet.name} (нажмите для подробностей)`
-      : hit.sun
-      ? `Солнце — нажмите для подробностей`   /* v7.3 */
-      : `${hit.planet.name} — нажмите для подробностей`;
-    tooltip.style.left = e.clientX + "px";
-    tooltip.style.top = e.clientY + "px";
-    tooltip.classList.remove("hidden");
-  } else {
-    tooltip.classList.add("hidden");
-  }
 });
 
 canvas.addEventListener("mouseleave", () => {
   state.hovered = null;
-  tooltip.classList.add("hidden");
 });
 
 /* ---------- Панорамирование карты («сцепиться мышкой и тащить») ----------
