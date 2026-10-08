@@ -600,7 +600,7 @@ function drawSun(timeSec) {
   ctx.beginPath();
   ctx.arc(cx, cy, R, 0, Math.PI * 2);
   ctx.fill();
-  if (state.showLabels) {
+  if (state.showLabels || state.hovered === SUN) {
     ctx.fillStyle = "rgba(255, 225, 150, 0.9)";
     ctx.font = "600 12px 'Segoe UI', sans-serif";
     ctx.textAlign = "center";
@@ -786,7 +786,7 @@ function drawComets(timeSec, layer) {
     ctx.fill();
 
     // подсветка выбора/наведения
-    const isSel = state.selected === c, isHov = false; /* v7.7: hover-подсветка убрана */
+    const isSel = state.selected === c, isHov = state.hovered === c;
     if (isSel || isHov) {
       ctx.save();
       ctx.strokeStyle = isSel ? "rgba(255, 215, 106, 0.9)" : "rgba(160, 190, 255, 0.6)";
@@ -798,7 +798,7 @@ function drawComets(timeSec, layer) {
       ctx.restore();
     }
 
-    if (state.showLabels && (act > 0.15 || isSel || isHov)) {
+    if ((state.showLabels || isHov) && (act > 0.15 || isSel || isHov)) {
       ctx.fillStyle = isSel ? "#ffd76a" : "rgba(200, 220, 250, 0.85)";
       ctx.font = (isSel ? "600 " : "") + "11px 'Segoe UI', sans-serif";
       ctx.textAlign = "center";
@@ -1085,7 +1085,7 @@ function drawBelt(timeSec, layer) {
     a._screen = { x: pos.x, y: pos.y, r: R };           // для попаданий курсора
 
     const isSel = state.selected === a;
-    const isHov = false; /* v7.7: hover-подсветка убрана */
+    const isHov = state.hovered === a;
     if (isSel || isHov) {
       ctx.save();
       ctx.strokeStyle = isSel ? "rgba(255, 215, 106, 0.9)" : "rgba(160, 190, 255, 0.6)";
@@ -1126,7 +1126,7 @@ function drawBelt(timeSec, layer) {
       ctx.fill();
     }
 
-    if (state.showLabels) {
+    if (state.showLabels || state.hovered === a) {
       ctx.fillStyle = isSel ? "#ffd76a" : "rgba(205, 200, 190, 0.85)";
       ctx.font = (isSel ? "600 " : "") + "11px 'Segoe UI', sans-serif";
       ctx.textAlign = "center";
@@ -1257,7 +1257,7 @@ function drawDwarf(d, timeSec, layer) {
   if (behind && Math.hypot(pos.x - sunX(), pos.y - sunY()) < sunScreenR + R * 0.35) return;
 
   const isSel = state.selected === d;
-  const isHov = false; /* v7.7: hover-подсветка убрана */
+  const isHov = state.hovered === d;
   if (isSel || isHov) {
     ctx.save();
     ctx.strokeStyle = isSel ? "rgba(255, 215, 106, 0.9)" : "rgba(160, 190, 255, 0.6)";
@@ -1307,7 +1307,7 @@ function drawDwarf(d, timeSec, layer) {
       ctx.arc(mpt.x, mpt.y, Math.max(1.4, R * m.relR), 0, Math.PI * 2);
       ctx.fill();
       m._screen = { x: mpt.x, y: mpt.y, r: Math.max(1.4, R * m.relR), planet: d.name };
-      if (state.showLabels || state.zoom > 2) {
+      if (state.showLabels || state.zoom > 2 || state.hovered === m) {
         ctx.fillStyle = "rgba(175, 190, 225, 0.75)";
         ctx.font = "10px 'Segoe UI', sans-serif";
         ctx.textAlign = "center";
@@ -1318,9 +1318,10 @@ function drawDwarf(d, timeSec, layer) {
     for (const m of d.moonsList) m._screen = null;
   }
 
-  /* Подпись: если названия включены — всегда; иначе — при крупном зуме (>1.2×),
-     чтобы далёкие тела можно было опознать, приближая картину. */
-  if (state.showLabels || state.zoom > 1.2) {
+  /* Подпись: если названия включены — всегда; при крупном зуме (>1.2×) —
+     чтобы далёкие тела можно было опознать; и всегда при наведении курсора
+     (подсказка именем вместо HTML-tooltip: видна только пока курсор на теле). */
+  if (state.showLabels || state.zoom > 1.2 || isHov) {
     ctx.fillStyle = isSel ? "#ffd76a" : "rgba(190, 205, 235, 0.8)";
     ctx.font = (isSel ? "600 " : "") + "11px 'Segoe UI', sans-serif";
     ctx.textAlign = "center";
@@ -1355,7 +1356,7 @@ function drawPlanet(p, timeSec, layer) {
   if (behind && Math.hypot(pos.x - sunX(), pos.y - sunY()) < sunScreenR + R * 0.35) return;
 
   const isSel = state.selected === p;
-  const isHov = false; /* v7.7: hover-подсветка убрана */
+  const isHov = state.hovered === p;
 
   // подсветка выбранной/наведённой
   if (isSel || isHov) {
@@ -1416,11 +1417,12 @@ function drawPlanet(p, timeSec, layer) {
 
   // крупнейшие луны (опциональный слой): всегда поверх диска планеты
   if (state.showMoons && p.majorMoons) {
+    for (const m of p.majorMoons) m._hovered = state.hovered === m;
     for (const m of p.majorMoons) drawMoon(p, m, pos, R, isSel);
   }
 
-  // подпись
-  if (state.showLabels) {
+  // подпись (наведения курсора достаточно, даже если слой «Названия» выключен)
+  if (state.showLabels || isHov) {
     ctx.fillStyle = isSel ? "#ffd76a" : "rgba(210, 222, 245, 0.85)";
     ctx.font = (isSel ? "600 " : "") + "12px 'Segoe UI', sans-serif";
     ctx.textAlign = "center";
@@ -1455,8 +1457,9 @@ function drawMoon(planet, moon, pos, R, highlight) {
   ctx.arc(mp.x, mp.y, mp.r, 0, Math.PI * 2);
   ctx.fill();
 
-  // имя — при выборе/наведении на планету или включённых подписях при увеличенном масштабе
-  if (highlight || state.showLabels) {
+  // имя — при выборе/наведении на планету, при включённых подписях
+  // или при крупном зуме (луны можно опознать, приближая картину)
+  if (highlight || state.showLabels || state.zoom > 2 || moon._hovered) {
     ctx.fillStyle = "rgba(200, 210, 235, 0.75)";
     ctx.font = "10px 'Segoe UI', sans-serif";
     ctx.textAlign = "center";
@@ -1653,7 +1656,7 @@ function drawAlien(nowSec) {
   }
 
   // подсветка при наведении/выборе
-  const isSel = state.selected === a, isHov = false; /* v7.7: hover-подсветка убрана */
+  const isSel = state.selected === a, isHov = state.hovered === a;
   if (isSel || isHov) {
     ctx.strokeStyle = isSel ? "rgba(255,215,106,0.9)" : hexToRgba(a.color, 0.6);
     ctx.lineWidth = 1.5; ctx.setLineDash(isSel ? [] : [3, 4]);
@@ -2311,7 +2314,7 @@ function hideInfo() {
 document.getElementById("btnCloseInfo").addEventListener("click", hideInfo);
 
 /* ---------- Мышь: наведение, клик ---------- */
-/* v7.7: tooltip-элемент удалён из DOM — подсказки больше не используются. */
+/* Подсказки реализованы подписями имён на канвасе; HTML-tooltip в DOM нет. */
 
 /* v7.7: курсорные координаты -> «пиксели холста».
    Раньше в pickAny() передавались e.clientX/e.clientY напрямую, а _screen-
@@ -2337,16 +2340,20 @@ function toWorld(mx, my) {
   return { x: (mx - sx) / state.zoom + sx, y: (my - sy) / state.zoom + sy };
 }
 
-/* v7.7: HTML-подсказки (tooltip) убраны ПОЛНОСТЬЮ для всех тел: они
-   позиционировались CSS-смещением translate(-50%, -140%) и на больших
-   объектах (карликовые планеты, гиганты при зуме) улетали далеко от
-   курсора. Теперь единственный отклик на наведение — подсветка контура
-   тела на канвасе (+ подписи названий, если слой «Названия» включён). */
+/* HTML-подсказки (tooltip) убраны: отклик на наведение — подсветка контура
+   тела и подпись его имени прямо на канвасе (видна, пока курсор на теле). */
 canvas.addEventListener("mousemove", (e) => {
   const cp = canvasPoint(e);
   const wpt = toWorld(cp.x, cp.y);
   const hit = pickAny(wpt.x, wpt.y);
-  state.hovered = hit ? (hit.alien || hit.comet || hit.asteroid || hit.dwarf || hit.planet) : null;
+  /* Подписью имени на канвасе отвечаем на наведение вместо HTML-tooltip:
+     hovered хранит конкретное тело (планета/карликовая планета/спутник/
+     астероид/комета/НЛО/Солнце), подпись рисуется ровно над ним и исчезает,
+     как только курсор уходит с тела — поэтому имена не «остаются» при
+     выключенном слое «Названия». */
+  state.hovered = hit
+    ? (hit.alien || hit.comet || hit.asteroid || hit.dwarfMoon || hit.dwarf || hit.moon || hit.planet || hit.sun || null)
+    : null;
   canvas.classList.toggle("hovering", !!hit);
 });
 
@@ -2373,7 +2380,6 @@ canvas.addEventListener("mousedown", (e) => {
   if (e.button !== 0) return;
   const cp = canvasPoint(e);
   const wpt = toWorld(cp.x, cp.y);
-  if (pickAny(wpt.x, wpt.y)) return;   // нажатие по телу — не тянем карту
   dragging = true;
   dragMoved = false;
   dragStartX = e.clientX;
